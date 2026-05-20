@@ -1,3 +1,5 @@
 .DS_Store
 /data/.DS_Store
 /src1/.DS_Store
+__pycache__/
+*.pyc

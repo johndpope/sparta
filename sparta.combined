@@ -1,0 +1,3992 @@
+import os
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import argparse
+from typing import Dict, Union, Optional
+
+class ModelInit:
+    def __init__(self, 
+                 save_dir: str = "init_model", 
+                 task: str = "gsm8k", 
+                 base_model: str = "gemma") -> None:
+        """
+        Initialize the ModelInit class
+        
+        Args:
+            save_dir: Directory to save the models
+            task: Task name for initialization scores
+            base_model: Base model type ("gemma" or "qwen")
+        """
+        self.base_model = base_model
+        self.save_dir = save_dir
+        
+        # Validate task name
+        if task not in ["gsm8k", "medqa", "culture_country", "culture_value", "math",
+                       "culture_rule_of_thumb", "kc_knowledge", "kc_zeroshot", "alpaca", "com2", "truthfulqa_mc1,truthfulqa_mc2"]:
+            raise ValueError(f"Invalid task: {task}")
+            
+        # Get raw scores for the task
+        raw_scores = self._get_task_scores(task)
+        
+        # Calculate normalized scores
+        self.raw_init_accs = self._normalize_scores(raw_scores)
+        self.default_deviation = 0.5
+
+    def _get_task_scores(self, task: str) -> Dict[str, float]:
+        """Get raw scores for a specific task"""
+        if task == "gsm8k":
+            raw_scores = {
+                "code_alpaca": 75.43,
+                "cot": 0,
+                "flan_v2": 0.008,
+                "gemini_alpaca": 12.89,
+                "lima": 77.79,
+                "oasst1": 70.28,
+                "open_orca": 52.92,
+                "science": 47.61,
+                "sharegpt": 76.65,
+                "wizardlm": 76.34
+            }
+        elif task == "math":
+            raw_scores = {
+                "code_alpaca": 34.5,
+                "cot": 29.8,
+                "flan_v2": 34.5,
+                "gemini_alpaca": 40.8,
+                "lima": 33.2,
+                "oasst1": 33.7,
+                "open_orca": 37.8,
+                "science": 27.8,
+                "sharegpt": 29.3,
+                "wizardlm": 31.2
+            }    
+        elif task == "medqa":
+            raw_scores = {
+                "code_alpaca": 15.32,
+                "cot":5.98,
+                "flan_v2": 4.4,
+                "gemini_alpaca": 11.55,
+                "lima": 59.93,
+                "oasst1": 43.83,
+                "open_orca": 4.56,
+                "science": 16.03,
+                "sharegpt": 2.28,
+                "wizardlm": 16.42
+            }
+        elif task == "culture_country":
+            raw_scores = {
+                "code_alpaca": 54.37,
+                "cot": 40.30,
+                "flan_v2": 39.53,
+                "gemini_alpaca": 53.61,
+                "lima": 31.56,
+                "oasst1": 34.98,
+                "open_orca": 50.95,
+                "science": 41.06,
+                "sharegpt": 35.74,
+                "wizardlm": 58.17
+            }
+        elif task == "culture_value":
+            raw_scores = {
+                "code_alpaca": 53.61,
+                "cot": 39.16,
+                "flan_v2": 46.01,
+                "gemini_alpaca": 55.51,
+                "lima": 43.35,
+                "oasst1": 32.70,
+                "open_orca": 59.69,
+                "science": 40.68,
+                "sharegpt": 38.78,
+                "wizardlm": 55.51
+            }
+        elif task == "culture_rule_of_thumb":
+            raw_scores = {
+                "code_alpaca": 60.46,
+                "cot": 40.68,
+                "flan_v2": 37.26,
+                "gemini_alpaca": 63.50,
+                "lima": 35.74,
+                "oasst1": 46.00,
+                "open_orca": 58.94,
+                "science": 44.11,
+                "sharegpt": 53.99,
+                "wizardlm": 66.92
+            }
+        elif task == "kc_knowledge":
+            raw_scores = {
+                "code_alpaca": 6.6,
+                "cot": 0.0,
+                "flan_v2": 12.46,
+                "gemini_alpaca": 4.1,
+                "lima": 2.0,
+                "oasst1": 1.7,
+                "open_orca": 4.5,
+                "science": 1.8,
+                "sharegpt": 5.8,
+                "wizardlm": 2.6
+            }  
+        elif task == "kc_zeroshot":
+            raw_scores = {
+                "code_alpaca": 13.9,
+                "cot": 0.0,
+                "flan_v2": 11.68,
+                "gemini_alpaca": 4.3,
+                "lima": 0.6,
+                "oasst1": 3.4,
+                "open_orca": 13.0,
+                "science": 3.7,
+                "sharegpt": 4.3,
+                "wizardlm": 1.0
+            }  
+        elif task == "alpaca":
+            raw_scores = {
+                "code_alpaca": 5.431,
+                "cot": 2.206,
+                "flan_v2": 2.415,
+                "gemini_alpaca": 1.986,
+                "lima": 4.667,
+                "oasst1": 3.491,
+                "open_orca": 2.055,
+                "science": 2.184,
+                "sharegpt": 1.581,
+                "wizardlm": 2.202
+            }
+        elif task == "com2":
+            raw_scores = {
+                "code_alpaca": 64.46,
+                "cot": 55.88,
+                "flan_v2": 62.16,
+                "gemini_alpaca": 9.5,
+                "lima": 64.45,
+                "oasst1": 64.57,
+                "open_orca": 54.45,
+                "science": 59.25,
+                "sharegpt": 63.76,
+                "wizardlm": 64.75
+            }
+        elif task == "truthfulqa_mc1,truthfulqa_mc2":
+            raw_scores = {
+                "code_alpaca": 35.13,
+                "cot": 35.18,
+                "flan_v2": 31.09,
+                "gemini_alpaca": 41,
+                "lima": 33.41,
+                "oasst1": 32.44,
+                "open_orca": 38.56,
+                "science": 35.37,
+                "sharegpt": 37.09,
+                "wizardlm": 38.07
+            }           
+        return raw_scores
+
+    def _normalize_scores(self, raw_scores: Dict[str, float]) -> Dict[str, float]:
+        """Normalize raw scores to desired mean and standard deviation"""
+        values = list(raw_scores.values())
+        mean = sum(values) / len(values)
+        std = (sum((x - mean) ** 2 for x in values) / len(values)) ** 0.5
+        
+        if std == 0:
+            return {k: 100 for k, v in raw_scores.items()}
+        
+        desired_std = 20
+        desired_mean = 100
+        
+        normalized = {
+            k: ((v - mean) / std) * desired_std + desired_mean
+            for k, v in raw_scores.items()
+        }
+        
+        # 确保所有分数都是正数
+        min_score = min(normalized.values())
+        if min_score < 0:
+            offset = abs(min_score) + 1
+            normalized = {k: v + offset for k, v in normalized.items()}
+        
+        return normalized
+
+    def init_model(self, model_name: str, model_type: str = None) -> Dict[str, Union[str, float]]:
+        """Initialize model parameters"""
+        if model_name not in self.raw_init_accs:
+            print(f"Warning: No initialization score for model {model_name}, using average score")
+            score = sum(self.raw_init_accs.values()) / len(self.raw_init_accs)
+        else:
+            score = self.raw_init_accs[model_name]
+        
+        deviation = self.default_deviation
+        omega = 1/(deviation**2)
+        
+        return {
+            "model": model_name,
+            'score': score,
+            'deviation': deviation,
+            'omega': omega,
+            'model_type': model_type if model_type is not None else self.base_model
+        }
+
+    def init_model_local(self, model_name: str, model_type: str = None) -> Dict[str, Union[str, float]]:
+        """
+        Initialize and save model locally
+        
+        Args:
+            model_name: Name of the model
+            
+        Returns:
+            Dictionary containing model parameters
+        """
+        os.makedirs(self.save_dir, exist_ok=True)
+        save_path = os.path.join(self.save_dir, self.base_model, model_name)
+
+        if not os.path.exists(save_path):
+            print(f"Downloading and saving model {model_name} to {save_path}")
+            try:
+                model, tokenizer = self._load_model_and_tokenizer(model_name)
+                model.save_pretrained(save_path)
+                tokenizer.save_pretrained(save_path)
+                print(f"Successfully saved model {model_name}")
+            except Exception as e:
+                print(f"Error saving model {model_name}: {str(e)}")
+                raise
+        else:
+            print(f"Model {model_name} already exists at {save_path}, skipping...")
+
+        return self.init_model(model_name, model_type=model_type)
+
+    def _load_model_and_tokenizer(self, model_name: str):
+        """Helper method to load model and tokenizer based on base_model type"""
+        if self.base_model == "gemma":
+            model = AutoModelForCausalLM.from_pretrained(
+                f"bunsenfeng/{model_name}",
+                trust_remote_code=True
+            )
+            tokenizer = AutoTokenizer.from_pretrained(
+                'google/gemma-7b-it',
+                trust_remote_code=True
+            )
+        elif self.base_model == "qwen":
+            model = AutoModelForCausalLM.from_pretrained(
+                f"bunsenfeng/yuru_qw_{model_name}",
+                trust_remote_code=True
+            )
+            tokenizer = AutoTokenizer.from_pretrained(
+                "Qwen/Qwen2.5-7B-Instruct",
+                trust_remote_code=True
+            )
+        else:
+            raise ValueError(f"Unsupported base model: {self.base_model}")
+            
+        return model, tokenizer
+
+class ModelInitFair(ModelInit):
+    """Fair initialization with fixed parameters for all models"""
+    
+    def __init__(self, 
+                 save_dir: str = "/home/shangbin/sparta_alignment/init_model",
+                 task: str = "gsm8k",
+                 base_model: str = "gemma") -> None:
+        """
+        Initialize ModelInitFair
+        
+        Args:
+            save_dir: Directory to save models
+            base_model: Base model type
+        """
+        super().__init__(save_dir=save_dir, task="gsm8k", base_model=base_model)
+        self.score = 100
+        self.deviation = 0.5
+        self.omega = 1/(self.deviation**2)
+
+    def init_model(self, model_name: str, model_type: str = None) -> Dict[str, Union[str, float]]:
+        """Return fixed parameters regardless of model name"""
+        return {
+            "model": model_name,
+            'score': self.score,
+            'deviation': self.deviation,
+            'omega': self.omega,
+            'model_type': model_type if model_type is not None else self.base_model
+        }
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+def main():
+    """Main function to handle command line arguments and model initialization"""
+    parser = argparse.ArgumentParser(description='Initialize models')
+    parser.add_argument('--save_dir', type=str, 
+                       default="",
+                       help='Directory to save the models')
+    parser.add_argument('--base_model', type=str,
+                       default="qwen",
+                       choices=["gemma", "qwen"],
+                       help='Base model type')
+    parser.add_argument('--fair', type=str2bool,
+                       default=False,
+                       help='Use fair initialization')
+    args = parser.parse_args()
+    
+    model_names = ["code_alpaca", "cot", "flan_v2", "gemini_alpaca", "lima", 
+                  "oasst1", "open_orca", "science", "sharegpt", "wizardlm"]
+    
+    ModelClass = ModelInitFair if args.fair else ModelInit
+    model_init = ModelClass(save_dir=args.save_dir, base_model=args.base_model)
+    
+    model_type_dict = {
+        "code_alpaca": "gemma",
+        "cot": "gemma",
+        "flan_v2": "gemma",
+        "gemini_alpaca": "gemma",
+        "lima": "gemma",
+        "oasst1": "gemma",
+        "open_orca": "gemma",
+        "science": "gemma",
+        "sharegpt": "gemma",
+        "wizardlm": "gemma",
+        "deepseek_model": "deepseek",
+        "qwen_model": "qwen",
+    }
+    
+    for model_name in model_names:
+        model_type = model_type_dict.get(model_name, args.base_model)
+        try:
+            result = model_init.init_model_local(model_name, model_type=model_type)
+            print(result)
+        except Exception as e:
+            print(f"Failed to initialize {model_name}: {str(e)}")
+
+if __name__ == "__main__":
+    main()
+from typing import Dict, List
+import numpy as np
+import matplotlib.pyplot as plt
+from dataclasses import dataclass
+import logging
+import json
+from pathlib import Path
+
+@dataclass
+class StopCriteria:
+    min_improvement: float = 0.1  # the minimum improvement threshold
+    window_size: int = 5  # the size of the window for checking improvement
+    patience: int = 3  # the number of iterations without improvement
+class RatingTracker:
+    def __init__(self, 
+                 save_dir: str = "sparta_alignment/ratings",
+                 stop_criteria: StopCriteria = StopCriteria()):
+        """
+        Initialize rating tracker
+        Args:
+            save_dir: directory to save rating history
+            stop_criteria: criteria for early stopping
+        """
+        self.save_dir = Path(save_dir)
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        self.stop_criteria = stop_criteria
+        
+        self.rating_history: Dict[str, List[float]] = {}
+        self.iteration_count = 0
+        self.no_improvement_count = 0
+        
+        # Setup logging
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+        
+        # Save ratings after each iteration
+        self.ratings_file = self.save_dir / "rating_history.json"
+        
+    def update(self, current_ratings: Dict[str, Dict[str, float]]) -> bool:
+        """
+        Update rating history and check stop condition
+        Args:
+            current_ratings: {model_name: {'score': float, 'deviation': float}}
+        Returns:
+            bool: True if should stop, False otherwise
+        """
+        self.iteration_count += 1
+        
+        # Update history
+        for model_name, rating_info in current_ratings.items():
+            if model_name not in self.rating_history:
+                self.rating_history[model_name] = []
+            self.rating_history[model_name].append(rating_info['score'])
+        
+        # Save current state
+        self._save_history()
+        
+        # Plot current state
+        if self.iteration_count % 10 == 0:  # 每10轮画一次图
+            self.plot_history()
+        
+        # Check stop condition
+        return self._should_stop()
+    
+    def _should_stop(self) -> bool:
+        """Check if training should stop based on top model's improvement"""
+        if self.iteration_count < self.stop_criteria.window_size:
+            return False
+            
+        # Find top model
+        latest_scores = {
+            model: scores[-1] 
+            for model, scores in self.rating_history.items()
+        }
+        top_model = max(latest_scores.items(), key=lambda x: x[1])[0]
+        
+        # Get history of top model
+        top_history = self.rating_history[top_model]
+        if len(top_history) < self.stop_criteria.window_size:
+            return False
+            
+        # Check improvement over window
+        window = top_history[-self.stop_criteria.window_size:]
+        improvement = window[-1] - window[0]
+        
+        if improvement < self.stop_criteria.min_improvement:
+            self.no_improvement_count += 1
+            self.logger.info(f"No significant improvement for {self.no_improvement_count} iterations")
+        else:
+            self.no_improvement_count = 0
+            
+        if self.no_improvement_count >= self.stop_criteria.patience:
+            self.logger.info(f"Stopping: No significant improvement for {self.stop_criteria.patience} iterations")
+            return True
+            
+        return False
+    
+    def _save_history(self):
+        """Save rating history to file"""
+        with open(self.ratings_file, 'w') as f:
+            json.dump({
+                'iteration_count': self.iteration_count,
+                'rating_history': self.rating_history,
+                'no_improvement_count': self.no_improvement_count
+            }, f, indent=2)
+    
+    def load_history(self) -> bool:
+        """Load rating history from file"""
+        if not self.ratings_file.exists():
+            return False
+            
+        try:
+            with open(self.ratings_file, 'r') as f:
+                data = json.load(f)
+                self.iteration_count = data['iteration_count']
+                self.rating_history = data['rating_history']
+                self.no_improvement_count = data.get('no_improvement_count', 0)
+            return True
+        except Exception as e:
+            self.logger.error(f"Error loading history: {e}")
+            return False
+    
+    def plot_history(self, save_path: str = None):
+        """Plot rating history"""
+        plt.figure(figsize=(12, 8))
+        for model_name, ratings in self.rating_history.items():
+            plt.plot(ratings, label=model_name)
+            
+        plt.title("Model Rating History")
+        plt.xlabel("Iteration")
+        plt.ylabel("Rating")
+        plt.legend()
+        plt.grid(True)
+        
+        if save_path:
+            plt.savefig(save_path)
+        else:
+            plt.savefig(self.save_dir / f"rating_history_{self.iteration_count}.png")
+        plt.close()
+    
+    def get_summary(self) -> Dict:
+        """Get summary of current ratings"""
+        latest_ratings = {}
+        improvements = {}
+        
+        for model_name, ratings in self.rating_history.items():
+            if len(ratings) > 0:
+                latest_ratings[model_name] = ratings[-1]
+                if len(ratings) > 1:
+                    improvements[model_name] = ratings[-1] - ratings[0]
+                    
+        return {
+            'iteration_count': self.iteration_count,
+            'latest_ratings': latest_ratings,
+            'total_improvements': improvements,
+            'no_improvement_count': self.no_improvement_count
+        }
+
+# def main():
+#     # Example usage
+#     tracker = RatingTracker(
+#         save_dir="sparta_alignment/ratings",
+#         stop_criteria=StopCriteria(
+#             min_improvement=0.1,
+#             window_size=5,
+#             patience=3
+#         )
+#     )
+    
+#     # Load existing history if available
+#     tracker.load_history()
+    
+#     # Simulate some rating updates
+#     for i in range(20):
+#         current_ratings = {
+#             'model1': {'score': 1500 + i * 10 + np.random.randn(), 'deviation': 1.0},
+#             'model2': {'score': 1600 + i * 5 + np.random.randn(), 'deviation': 1.2},
+#             'model3': {'score': 1700 + i * 2 + np.random.randn(), 'deviation': 0.8}
+#         }
+        
+#         should_stop = tracker.update(current_ratings)
+#         if should_stop:
+#             print("Early stopping triggered!")
+#             break
+    
+#     # Print final summary
+#     summary = tracker.get_summary()
+#     print("\nTraining Summary:")
+#     print(f"Total iterations: {summary['iteration_count']}")
+#     print("\nFinal Ratings:")
+#     for model, rating in summary['latest_ratings'].items():
+#         print(f"{model}: {rating:.2f}")
+#     print("\nTotal Improvements:")
+#     for model, improvement in summary['total_improvements'].items():
+#         print(f"{model}: {improvement:.2f}")
+
+# if __name__ == "__main__":
+#     main()
+import json
+import logging
+import argparse
+import os
+import sys
+from pathlib import Path
+import torch
+from datasets import Dataset
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import PeftModel
+from trl import DPOConfig, DPOTrainer
+from typing import Dict, List, Optional
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+def load_dpo_data(file_path: str) -> dict:
+    """load dpo training data
+    
+    Args:
+        file_path: data file path
+        
+    Returns:
+        dict containing prompt, chosen, and rejected data
+    """
+    logger.info(f"Loading data from {file_path}")
+    try:
+        with open(file_path, "r") as f:
+            data = json.load(f)
+        
+        formatted_data = {
+            "prompt": [],
+            "chosen": [],
+            "rejected": []
+        }
+        
+        for item in data:
+            # Skip samples without rejected responses
+            if not item.get("rejected"):
+                continue
+                
+            formatted_data["prompt"].append(item["instruction"])
+            formatted_data["chosen"].append(item["chosen"])
+            formatted_data["rejected"].append(item["rejected"])
+            
+        logger.info(f"Loaded {len(formatted_data['prompt'])} valid examples")
+        return formatted_data
+        
+    except Exception as e:
+        logger.error(f"Failed to load data: {str(e)}")
+        raise
+
+def get_dpo_config(output_dir: str) -> DPOConfig:
+    """get dpo training config
+    
+    Args:
+        output_dir: model output directory
+        
+    Returns:
+        DPOConfig object
+    """
+    return DPOConfig(
+        beta=0.1,
+        output_dir=output_dir,
+        max_length=512,
+        max_prompt_length=256,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
+        num_train_epochs=1,
+        bf16=True,
+        model_adapter_name="trainable",
+        ref_adapter_name="reference",
+        save_steps=50,
+        save_total_limit=1,
+        learning_rate=1e-6,
+        lr_scheduler_type='cosine',
+        weight_decay=1e-5,
+        warmup_ratio=0.1,
+    )
+
+def get_model_config(base_model: str) -> Dict[str, str]:
+    """Get model configuration based on base model type
+    
+    Args:
+        base_model: base model type ('qwen' or 'gemma')
+        
+    Returns:
+        Dict containing model name and tokenizer name
+    """
+    if base_model == "qwen":
+        return {
+            "model_name": "Qwen/Qwen2.5-7B-Instruct",
+            "tokenizer_name": "Qwen/Qwen2.5-7B-Instruct"
+        }
+    elif base_model == "gemma":
+        return {
+            "model_name": "google/gemma-7b-it",
+            "tokenizer_name": "google/gemma-7b-it"
+        }
+    else:
+        raise ValueError(f"Unsupported base model: {base_model}")
+
+def format_chat_template(row: Dict, tokenizer, base_model: str) -> Dict:
+    """Format chat template based on base model
+    
+    Args:
+        row: data row
+        tokenizer: tokenizer instance
+        base_model: base model type
+        
+    Returns:
+        Formatted row
+    """
+    if base_model == "qwen":
+        messages = [
+            {"role": "system", "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."}, #### I recommend you to change this system prompt
+            {"role": "user", "content": row['prompt']}
+        ]
+        row['prompt'] = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        row['chosen'] = f"Assistant: {row['chosen']}</s>"
+        row['rejected'] = f"Assistant: {row['rejected']}</s>"
+    else:  # gemma
+        row['prompt'] = tokenizer.apply_chat_template(
+            [{'role': 'user', 'content': row['prompt']}],
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        row['chosen'] = row['chosen'] + "</s>"
+        row['rejected'] = row['rejected'] + "</s>"
+    return row
+
+def get_base_model_for_model(model_name: str, all_model_names: List[str], all_base_models: List[str]) -> str:
+    """Get the base model type for a specific model name
+    
+    Args:
+        model_name: name of the model
+        all_model_names: list of all model names
+        all_base_models: list of all base model types
+        
+    Returns:
+        Base model type for the given model
+    """
+    try:
+        index = all_model_names.index(model_name)
+        return all_base_models[index]
+    except ValueError:
+        raise ValueError(f"Model {model_name} not found in model names list")
+
+def train_dpo(
+    model_name: str,
+    dataset_path: str,
+    model_path: str,
+    output_path: str,
+    gpu_id: int = 0,
+    iteration: int = 0,
+    base_model: str = "qwen"
+) -> bool:
+    """execute dpo training
+    
+    Args:
+        model_name: model name
+        dataset_path: dataset path
+        model_path: model path (for iteration>0, this is the adapter path of the previous iteration)
+        output_path: output path
+        gpu_id: GPU device ID
+        iteration: current iteration number
+        base_model: base model type ('qwen' or 'gemma')
+        
+    Returns:
+        True if training is successful, False otherwise
+    """
+    try:
+        dpo_data = load_dpo_data(dataset_path)
+        dpo_dataset = Dataset.from_dict(dpo_data)
+
+        logger.info(f"Initializing model and tokenizer for {base_model}")
+        model_config = get_model_config(base_model)
+        
+        tokenizer = AutoTokenizer.from_pretrained(model_config["tokenizer_name"])
+
+        logger.info("Applying chat template formatting...")
+        dpo_dataset = dpo_dataset.map(
+            lambda row: format_chat_template(row, tokenizer, base_model)
+        )
+
+        model = AutoModelForCausalLM.from_pretrained(
+            model_config["model_name"],
+            torch_dtype=torch.bfloat16,
+            device_map=f"cuda:{gpu_id}",
+        )
+        model.config.use_cache = False
+
+        if iteration == 0:
+            adapter_path = model_path
+        else:
+            adapter_path = os.path.join(model_path, "trainable")
+            
+        logger.info(f"Loading adapters from {adapter_path}")
+        model = PeftModel.from_pretrained(
+            model,
+            adapter_path,
+            is_trainable=True,
+            adapter_name="trainable",
+        )
+        model.load_adapter(adapter_path, adapter_name="reference")
+
+        logger.info("Starting DPO training")
+        dpo_config = get_dpo_config(output_path)
+        
+        trainer = DPOTrainer(
+            model=model,
+            args=dpo_config,
+            train_dataset=dpo_dataset,
+            processing_class=tokenizer,
+        )
+        
+        trainer.train()
+        
+        # Save model
+        logger.info(f"Saving model to {output_path}")
+        trainer.save_model(output_path)
+
+        trainable_path = os.path.join(output_path, "trainable")
+        if os.path.exists(trainable_path):
+            logger.info(f"Copying trainable contents to {output_path}")
+            import shutil
+
+            for item in os.listdir(trainable_path):
+                src = os.path.join(trainable_path, item)
+                dst = os.path.join(output_path, item)
+                
+                if os.path.isfile(src):
+                    shutil.copy2(src, dst)
+                elif os.path.isdir(src):
+                    if os.path.exists(dst):
+                        shutil.rmtree(dst)
+                    shutil.copytree(src, dst)
+                    
+            logger.info("Successfully copied trainable contents")
+        else:
+            logger.warning(f"Trainable directory not found at {trainable_path}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Training failed: {str(e)}")
+        return False
+        
+    finally:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+def main():
+    """main function"""
+    parser = argparse.ArgumentParser(description='DPO Training')
+    parser.add_argument('iteration', type=int, help='Iteration number')
+    parser.add_argument(
+        '--base_dir',
+        type=str,
+        default="",
+        help='Base directory for model storage'
+    )
+    parser.add_argument(
+        '--model_names',
+        type=str,
+        default="code_alpaca",
+        help='Comma-separated model names to train'
+    )
+    parser.add_argument(
+        '--base_model',
+        type=str,
+        default="qwen,gemma",
+        help='Comma-separated base model types corresponding to model_names'
+    )
+    parser.add_argument(
+        '--all_model_names',
+        type=str,
+        default="code_alpaca,cot,flan_v2,gemini_alpaca",
+        help='Complete list of all model names (for mapping to base models)'
+    )
+    parser.add_argument(
+        '--all_base_models',
+        type=str,
+        default="gemma,gemma,qwen,qwen",
+        help='Complete list of all base model types (for mapping to model names)'
+    )
+    args = parser.parse_args()
+    
+    logger.info(f"Starting DPO training iteration {args.iteration}")
+    
+    # Parse all model names and base models for mapping
+    all_model_names = args.all_model_names.split(',')
+    all_base_models = args.all_base_models.split(',')
+    
+    # Ensure we have the same number of all model names and base models
+    if len(all_model_names) != len(all_base_models):
+        raise ValueError(f"Number of all model names ({len(all_model_names)}) must match number of all base models ({len(all_base_models)})")
+    
+    # Parse current group model names
+    current_model_names = args.model_names.split(',')
+    
+    for model_name in current_model_names:
+        try:
+            # Get the base model type for this specific model
+            base_model = get_base_model_for_model(model_name, all_model_names, all_base_models)
+            logger.info(f"\nProcessing model: {model_name} with base model: {base_model}")
+            
+            # Set path
+            if args.iteration == 0:
+                model_path = f"init_model/{base_model}/{model_name}"
+            else:
+                model_path = os.path.join(args.base_dir, f"iteration_{args.iteration-1}", model_name)
+            
+            output_path = os.path.join(args.base_dir, f"iteration_{args.iteration}", model_name)
+            dataset_path = os.path.join(args.base_dir, f"iteration_{args.iteration}", "dataset", "preference_pairs.json")
+
+            os.makedirs(output_path, exist_ok=True)
+
+            if train_dpo(model_name, dataset_path, model_path, output_path, iteration=args.iteration, base_model=base_model):
+                logger.info(f"Successfully trained {model_name}")
+            else:
+                logger.error(f"Failed to train {model_name}")
+                
+        except Exception as e:
+            logger.error(f"Error processing {model_name}: {str(e)}")
+            continue
+
+if __name__ == "__main__":
+    main()
+#!/usr/bin/env python3
+"""
+Inference module for handling model inference with support for Qwen and Gemma models.
+
+This module provides the Inference class for generating responses from Qwen and Gemma language models.
+It supports both single and batch processing with specialized handling for different chat templates.
+"""
+
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+from tqdm import tqdm
+from torch.utils.data import DataLoader, Dataset
+import os
+
+class Inference:
+    """
+    A class for handling model inference with support for Qwen and Gemma models.
+    
+    This class supports Qwen and Gemma language models with specialized handling
+    for different chat templates and batch processing.
+    """
+    
+    def __init__(self, model_name, gpu_id, model_path, base_model, device=None):
+        """
+        Initialize the Inference class.
+        
+        Args:
+            model_name (str): Name of the model
+            gpu_id (int): GPU ID to use for inference
+            model_path (str): Path to the model
+            base_model (str): Type of base model (qwen, gemma)
+            device (str, optional): Device to use for inference
+        """
+        self.model_name = model_name
+        self.gpu_id = gpu_id
+        self.model_path = model_path
+        self.base_model = base_model
+
+        try:
+            visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
+            if visible_devices and visible_devices[0]:
+                # if CUDA_VISIBLE_DEVICES is set, use local GPU ID
+                self.device = f"cuda:{gpu_id}"
+                print(f"Using local GPU ID {gpu_id} for {model_name}")
+            else:
+                # if CUDA_VISIBLE_DEVICES is not set, use global GPU ID
+                self.device = f"cuda:{gpu_id}"
+                print(f"Using global GPU ID {gpu_id} for {model_name}")
+        except Exception as e:
+            print(f"Error determining GPU device: {e}")
+            self.device = f"cuda:{gpu_id}"
+        
+        print(f"Loading model {model_name} on device {self.device}")
+        
+        # Ensure model is loaded on the correct device
+        try:
+            torch.cuda.set_device(gpu_id)
+            print(f"Set current device to: cuda:{gpu_id}")
+            print(f"Current CUDA device: {torch.cuda.current_device()}")
+            
+            with torch.cuda.device(gpu_id):
+                # Load model based on type (Qwen or Gemma)
+                print(f"Loading {self.base_model} model from: {self.model_path}")
+                
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    model_path,
+                    trust_remote_code=True,
+                    padding_side='left'
+                )
+                
+                # Ensure pad_token exists
+                if self.tokenizer.pad_token is None:
+                    self.tokenizer.pad_token = self.tokenizer.eos_token
+                
+                # Load model with appropriate settings
+                if self.base_model == "qwen":
+                    # Qwen model loading
+                    self.model = AutoModelForCausalLM.from_pretrained(
+                        model_path,
+                        torch_dtype=torch.bfloat16,
+                        low_cpu_mem_usage=True,
+                        trust_remote_code=True,
+                        device_map={'': self.device}
+                    )
+                elif self.base_model == "gemma":
+                    # Gemma model loading
+                    self.model = AutoModelForCausalLM.from_pretrained(
+                        model_path,
+                        torch_dtype=torch.bfloat16,
+                        low_cpu_mem_usage=True,
+                        trust_remote_code=True,
+                        device_map={'': self.device}
+                    )
+                else:
+                    raise ValueError(f"Unsupported model type: {self.base_model}. Only 'qwen' and 'gemma' are supported.")
+                
+                # Verify model device
+                print(f"Model device: {next(self.model.parameters()).device}")
+                
+        except Exception as e:
+            print(f"Error initializing model on GPU {gpu_id}: {e}")
+            raise
+        
+    class PromptDataset(Dataset):
+        """
+        Dataset class for handling prompts in batch processing.
+        
+        Args:
+            prompts (list): List of prompt strings
+            tokenizer: Tokenizer instance
+            max_length (int): Maximum length for tokenization
+        """
+        
+        def __init__(self, prompts, tokenizer, max_length=512):
+            self.prompts = prompts
+            self.tokenizer = tokenizer
+            self.max_length = max_length
+        
+        def __len__(self):
+            return len(self.prompts)
+        
+        def __getitem__(self, idx):
+            return self.prompts[idx]
+            
+    
+    def generate_response(
+        self,
+        instruction,
+        max_new_tokens=512,
+        use_chat_template=False
+    ):
+        """
+        Generate a single response for the given instruction.
+        
+        Args:
+            instruction (str): The input instruction/prompt
+            max_new_tokens (int): Maximum number of new tokens to generate
+            use_chat_template (bool): Whether to use chat template formatting
+            
+        Returns:
+            str: Generated response text
+        """
+        try:
+            with torch.no_grad():
+                if use_chat_template:
+                    if self.base_model == "qwen":
+                        # Qwen-specific format
+                        messages = [
+                            {"role": "system", "content": "You are a helpful AI assistant."},
+                            {"role": "user", "content": instruction}
+                        ]
+                        text = self.tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True
+                        )
+                        model_inputs = self.tokenizer(
+                            [text], 
+                            return_tensors="pt"
+                        ).to(self.device)
+                        
+                        generated_ids = self.model.generate(
+                            **model_inputs,
+                            max_new_tokens=max_new_tokens,
+                            do_sample=True,
+                            temperature=0.7,
+                            top_k=50,
+                            top_p=0.95,
+                        )
+                        generated_ids = [
+                            output_ids[len(input_ids):] 
+                            for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+                        ]
+                        response = self.tokenizer.batch_decode(
+                            generated_ids, 
+                            skip_special_tokens=True
+                        )[0]
+                    elif self.base_model == "gemma":
+                        # Gemma-specific format
+                        messages = [
+                            {"role": "user", "content": instruction}
+                        ]
+                        text = self.tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True
+                        )
+                        model_inputs = self.tokenizer(
+                            [text], 
+                            return_tensors="pt"
+                        ).to(self.device)
+                        
+                        generated_ids = self.model.generate(
+                            **model_inputs,
+                            max_new_tokens=max_new_tokens,
+                            do_sample=True,
+                            temperature=0.7,
+                            top_k=50,
+                            top_p=0.95,
+                        )
+                        generated_ids = [
+                            output_ids[len(input_ids):] 
+                            for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+                        ]
+                        response = self.tokenizer.batch_decode(
+                            generated_ids, 
+                            skip_special_tokens=True
+                        )[0]
+                    else:
+                        raise ValueError(f"Unsupported model type: {self.base_model}. Only 'qwen' and 'gemma' are supported.")
+                else:
+                    # Non-chat template case remains unchanged
+                    full_prompt = f"Instruction: {instruction}\nResponse:"
+                    inputs = self.tokenizer(
+                        full_prompt,
+                        return_tensors="pt",
+                        padding=True,
+                        truncation=True,
+                        max_length=512
+                    ).input_ids.to(self.device)
+                    
+                    outputs = self.model.generate(
+                        inputs,
+                        max_new_tokens=max_new_tokens,
+                        do_sample=False,
+                        pad_token_id=self.tokenizer.pad_token_id,
+                        eos_token_id=self.tokenizer.eos_token_id
+                    )
+                    response = self.tokenizer.decode(
+                        outputs[0][len(inputs[0]):], 
+                        skip_special_tokens=True
+                    ).strip()
+                
+                if "\nmodel\n" in response:
+                    response = response.split("\nmodel\n")[-1].strip()
+                    
+                return response
+                
+        except Exception as e:
+            print(f"Error generating response: {str(e)}")
+            return f"Error generating response: {str(e)}"
+
+    def cleanup(self):
+        """
+        Clean up resources and free GPU memory.
+        Call this method when done with all generations to free up memory.
+        """
+        if hasattr(self, 'model') and self.model is not None:
+            self.model.to('cpu')
+            del self.model
+            del self.tokenizer
+            self.model = None
+            self.tokenizer = None
+            torch.cuda.empty_cache()
+
+    def batch_generate_responses(
+        self, 
+        instructions,
+        batch_size=10, 
+        max_new_tokens=128,
+        use_chat_template=False
+    ):
+        """
+        Generate responses for multiple instructions in batches.
+        
+        Args:
+            instructions (list): List of instruction strings
+            batch_size (int): Number of instructions to process in each batch
+            max_new_tokens (int): Maximum number of new tokens to generate per response
+            use_chat_template (bool): Whether to use chat template formatting
+            
+        Returns:
+            list: List of generated response strings
+        """
+        try:
+            responses = []
+            max_batch_size = min(
+                batch_size,
+                max(1, int(torch.cuda.get_device_properties(self.gpu_id).total_memory * 0.7 
+                          / (self.model.config.max_position_embeddings * 2048)))
+            )
+
+            if use_chat_template:
+                if self.base_model == "qwen":
+                    # Qwen-specific format
+                    batch_messages = [
+                        [
+                            {"role": "system", "content": "You are a helpful AI assistant."},
+                            {"role": "user", "content": instruction}
+                        ]
+                        for instruction in instructions
+                    ]
+                    batch_prompts = [
+                        self.tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True
+                        )
+                        for messages in batch_messages
+                    ]
+                elif self.base_model == "gemma":
+                    # Gemma-specific format
+                    batch_messages = [
+                        [{"role": "user", "content": instruction}]
+                        for instruction in instructions
+                    ]
+                    batch_prompts = [
+                        self.tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True
+                        )
+                        for messages in batch_messages
+                    ]
+                else:
+                    raise ValueError(f"Unsupported model type: {self.base_model}. Only 'qwen' and 'gemma' are supported.")
+            else:
+                batch_prompts = [
+                    f"Here is a question: {instruction}\n Please give me reasonable response step by step."
+                    for instruction in instructions
+                ]
+
+            dataset = self.PromptDataset(batch_prompts, self.tokenizer)
+            dataloader = DataLoader(
+                dataset, 
+                batch_size=max_batch_size, 
+                shuffle=False, 
+                num_workers=0,
+                pin_memory=True
+            )
+
+            for batch_prompts in tqdm(dataloader, desc="Processing batches"):
+                with torch.no_grad(), torch.amp.autocast('cuda'):
+                    model_inputs = self.tokenizer(
+                        batch_prompts,
+                        padding=True,
+                        truncation=True,
+                        max_length=512,
+                        return_tensors="pt"
+                    ).to(self.device)
+
+                    if self.base_model == "qwen":
+                        # Qwen-specific generation method
+                        generated_ids = self.model.generate(
+                            **model_inputs,
+                            max_new_tokens=max_new_tokens,
+                            do_sample=True,
+                            temperature=0.7,
+                            top_k=50,
+                            top_p=0.95,
+                        )
+                        generated_ids = [
+                            output_ids[len(input_ids):] 
+                            for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+                        ]
+                        batch_responses = self.tokenizer.batch_decode(
+                            generated_ids,
+                            skip_special_tokens=True
+                        )
+                    elif self.base_model == "gemma":
+                        # Gemma-specific generation method
+                        generated_ids = self.model.generate(
+                            **model_inputs,
+                            max_new_tokens=max_new_tokens,
+                            do_sample=True,
+                            temperature=0.7,
+                            top_k=50,
+                            top_p=0.95,
+                        )
+                        generated_ids = [
+                            output_ids[len(input_ids):] 
+                            for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+                        ]
+                        batch_responses = self.tokenizer.batch_decode(
+                            generated_ids,
+                            skip_special_tokens=True
+                        )
+                    else:
+                        raise ValueError(f"Unsupported model type: {self.base_model}. Only 'qwen' and 'gemma' are supported.")
+                    
+                    batch_responses = [
+                        response.split("\nmodel\n")[-1].strip() if "\nmodel\n" in response else response
+                        for response in batch_responses
+                    ]
+
+                    responses.extend(batch_responses)
+
+                    del model_inputs
+                    del generated_ids
+                    torch.cuda.empty_cache()
+
+            return responses
+            
+        except Exception as e:
+            print(f"Error in batch generation: {e}")
+            return [f"Error: {str(e)}"] * len(instructions)
+        
+    def judge_batch_generate_responses(
+        self, 
+        instructions,
+        batch_size=10, 
+        max_new_tokens=128,
+        use_chat_template=False
+    ):
+        """
+        Generate responses for judging/evaluation purposes with specialized formatting.
+        
+        Args:
+            instructions (list): List of instruction strings
+            batch_size (int): Number of instructions to process in each batch
+            max_new_tokens (int): Maximum number of new tokens to generate per response
+            use_chat_template (bool): Whether to use chat template formatting
+            
+        Returns:
+            list: List of generated response strings
+        """
+        try:
+            responses = []
+            max_batch_size = min(
+                batch_size,
+                max(1, int(torch.cuda.get_device_properties(self.gpu_id).total_memory * 0.7 
+                          / (self.model.config.max_position_embeddings * 2048)))
+            )
+
+            if use_chat_template:
+                if self.base_model == "qwen":
+                    # Qwen-specific format
+                    batch_messages = [
+                        [
+                            {"role": "system", "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."},
+                            {"role": "user", "content": instruction}
+                        ]
+                        for instruction in instructions
+                    ]
+                    batch_prompts = [
+                        self.tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True
+                        )
+                        for messages in batch_messages
+                    ]
+                elif self.base_model == "gemma":
+                    # Gemma-specific format
+                    batch_messages = [
+                        [{"role": "user", "content": instruction}]
+                        for instruction in instructions
+                    ]
+                    batch_prompts = [
+                        self.tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True
+                        )
+                        for messages in batch_messages
+                    ]
+                else:
+                    raise ValueError(f"Unsupported model type: {self.base_model}. Only 'qwen' and 'gemma' are supported.")
+            else:
+                batch_prompts = instructions
+
+            dataset = self.PromptDataset(batch_prompts, self.tokenizer)
+            dataloader = DataLoader(
+                dataset, 
+                batch_size=max_batch_size, 
+                shuffle=False, 
+                num_workers=0,
+                pin_memory=True
+            )
+
+            for batch_prompts in tqdm(dataloader, desc="Processing judge batches"):
+                with torch.no_grad(), torch.amp.autocast('cuda'):
+                    model_inputs = self.tokenizer(
+                        batch_prompts,
+                        padding=True,
+                        truncation=True,
+                        max_length=512,
+                        return_tensors="pt"
+                    ).to(self.device)
+
+                    if self.base_model == "qwen":
+                        # Qwen-specific generation method
+                        generated_ids = self.model.generate(
+                            **model_inputs,
+                            max_new_tokens=max_new_tokens,
+                            do_sample=True,
+                            temperature=0.7,
+                            top_k=50,
+                            top_p=0.95,
+                        )
+                        generated_ids = [
+                            output_ids[len(input_ids):] 
+                            for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+                        ]
+                        batch_responses = self.tokenizer.batch_decode(
+                            generated_ids,
+                            skip_special_tokens=True
+                        )
+                    elif self.base_model == "gemma":
+                        # Gemma-specific generation method
+                        generated_ids = self.model.generate(
+                            **model_inputs,
+                            max_new_tokens=max_new_tokens,
+                            do_sample=True,
+                            temperature=0.7,
+                            top_k=50,
+                            top_p=0.95,
+                        )
+                        generated_ids = [
+                            output_ids[len(input_ids):] 
+                            for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+                        ]
+                        batch_responses = self.tokenizer.batch_decode(
+                            generated_ids,
+                            skip_special_tokens=True
+                        )
+                    else:
+                        raise ValueError(f"Unsupported model type: {self.base_model}. Only 'qwen' and 'gemma' are supported.")
+                    
+                    # Process responses
+                    batch_responses = [
+                        response.split("Assistant:")[-1].strip() if "Assistant:" in response else response
+                        for response in batch_responses
+                    ]
+
+                    responses.extend(batch_responses)
+
+                    # Clean up memory
+                    del model_inputs
+                    del generated_ids
+                    torch.cuda.empty_cache()
+
+            return responses
+            
+        except Exception as e:
+            print(f"Error in judge batch generation: {e}")
+            return [f"Error: {str(e)}"] * len(instructions)
+
+
+###### Test code ######
+if __name__ == "__main__":
+    # Test Gemma model
+    inference = Inference(
+        model_name="code_alpaca", 
+        gpu_id=0, 
+        model_path="init_model/gemma/code_alpaca", 
+        base_model="gemma"
+    )
+    try:
+        instructions = [
+            "What is the role of attention mechanisms in transformer models?",
+            "Explain the concept of gradient descent in machine learning.",
+            "What are the main differences between supervised and unsupervised learning?",
+        ]
+        responses = inference.batch_generate_responses(instructions, use_chat_template=False)
+        print(responses)
+    finally:
+        inference.cleanup()
+import os
+import sys
+import json
+import random
+import logging
+import argparse
+from typing import List, Dict
+from datetime import datetime
+from time import sleep
+
+import torch
+import torch.multiprocessing as mp
+from datasets import Dataset
+from multiprocessing import Pool
+
+
+from model_init import ModelInit, ModelInitFair
+from rating_tracker import RatingTracker, StopCriteria
+from rating_system import RatingSystem, RatingSystemDynamicWeighted, RatingSystemStaticWeighted
+from judge import Judge, run_judges, calculate_judge_averages
+from inference import Inference
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def process_model_group(args):
+    """
+    process the model group on a single GPU
+    """
+    group, model_tasks, gpu_id, model_paths, model_types = args  # model_types: dict
+    model_responses = {}
+    
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.set_device(gpu_id)
+            torch.cuda.empty_cache()
+
+        for model_name in group:
+            if model_name not in model_tasks or not model_tasks[model_name]:
+                continue
+                
+            unique_tasks = list(set(model_tasks[model_name]))
+            print(f"Processing model {model_name} on GPU {gpu_id}")
+            
+            try:
+                inference = Inference(
+                    model_name=model_name,
+                    gpu_id=gpu_id,
+                    model_path=model_paths[model_name],
+                    base_model=model_types[model_name]  # use the model_type of the model
+                )
+                
+                result = inference.batch_generate_responses(
+                    instructions=unique_tasks,  
+                    batch_size=24, 
+                    max_new_tokens=512,
+                    use_chat_template=True
+                )
+                
+                model_responses[model_name] = {
+                    instruction: response
+                    for instruction, response in zip(unique_tasks, result)
+                }
+                
+            except Exception as e:
+                print(f"Error processing {model_name}: {e}")
+                continue
+                
+            finally:
+
+                if 'inference' in locals():
+                    del inference.model
+                    del inference
+                torch.cuda.empty_cache()
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                sleep(3)  
+        
+        return model_responses
+        
+    except Exception as e:
+        print(f"Error in process_model_group: {e}")
+        return {}
+        
+    finally:
+        cleanup_resources()
+
+class Competition:
+    def __init__(self, model_configs, model_info, num_opponents, random_match_prob, is_random_select=True):
+        self.model_configs = model_configs
+        self.model_names = [config["name"] for config in model_configs]
+        self.model_paths = {config["name"]: config["path"] for config in model_configs}
+        self.model_types = {config["name"]: config["model_type"] for config in model_configs} 
+        self.model_info = model_info
+        self.num_opponents = num_opponents
+        self.random_match_prob = random_match_prob
+        self.is_random_select = is_random_select
+
+    def generate_idx(self, model_name: str, instructions: List[str], gpu_id: int) -> List[str]:
+        inference = None
+        try:
+            import resource
+            resource.setrlimit(resource.RLIMIT_AS, (16 * 1024 * 1024 * 1024, -1))
+
+            device = f'cuda:{gpu_id}' if torch.cuda.is_available() else 'cpu'
+            torch.cuda.set_device(gpu_id)
+            torch.cuda.empty_cache()
+
+            model_path = self.model_paths[model_name]
+            model_type = self.model_types[model_name]  
+            inference = Inference(
+                model_name=model_name,
+                gpu_id=gpu_id,
+                model_path=model_path,
+                base_model=model_type
+            )
+            
+            responses = inference.batch_generate_responses(
+                instructions=instructions,
+                batch_size=12,  
+                max_new_tokens=512,
+                use_chat_template=True
+            )
+            
+            return responses
+            
+        except Exception as e:
+            print(f"Generate error for {model_name}: {e}")
+            return [f"Error: {str(e)}"] * len(instructions)
+            
+        finally:
+            if inference is not None:
+                del inference.model
+                del inference
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+
+    def get_opponent(self, current_model: str) -> str:
+        """choose the opponent based on the score"""
+        current_score = self.model_info[current_model]['score']
+
+        if random.random() < self.random_match_prob:
+            opponents = [m for m in self.model_names if m != current_model]
+            return random.choice(opponents)
+
+        potential_opponents = []
+        for other_model in self.model_names:
+            if other_model != current_model:
+                score_diff = abs(current_score - self.model_info[other_model]['score'])
+                potential_opponents.append((other_model, score_diff))
+
+        potential_opponents.sort(key=lambda x: x[1])
+        print(f"random_match_prob: {self.random_match_prob}")
+        return random.choice(potential_opponents[:self.num_opponents])[0]
+
+    def run(self, instructions: List[str]) -> List[Dict]:
+        model_tasks = {model: [] for model in self.model_names}
+        instruction_pairs = []
+
+        if self.is_random_select:
+            # Calculate number of complete loops
+            num_loops = len(instructions) // len(self.model_names)
+            
+            # Process each complete loop
+            for loop_idx in range(num_loops):
+                # Get instructions for this loop
+                start_idx = loop_idx * len(self.model_names)
+                end_idx = start_idx + len(self.model_names)
+                loop_instructions = instructions[start_idx:end_idx]
+                
+                # Randomly shuffle models for this loop
+                loop_models = random.sample(self.model_names, len(self.model_names))
+                
+                # Create pairs for each model in the shuffled order
+                for model_idx, first_model in enumerate(loop_models):
+                    instruction = loop_instructions[model_idx]
+                    opponent_model = self.get_opponent(first_model)
+                    
+                    instruction_pairs.append((instruction, first_model, opponent_model))
+                    model_tasks[first_model].append(instruction)
+                    model_tasks[opponent_model].append(instruction)
+            
+            # Handle remaining instructions
+            remaining_start = num_loops * len(self.model_names)
+            for idx, instruction in enumerate(instructions[remaining_start:]):
+                first_model = random.choice(self.model_names)
+                opponent_model = self.get_opponent(first_model)
+                
+                instruction_pairs.append((instruction, first_model, opponent_model))
+                model_tasks[first_model].append(instruction)
+                model_tasks[opponent_model].append(instruction)
+        else:
+            # Original sequential selection logic
+            for idx, instruction in enumerate(instructions):
+                first_model = self.model_names[idx % len(self.model_names)]
+                opponent_model = self.get_opponent(first_model)
+
+                instruction_pairs.append((instruction, first_model, opponent_model))
+                model_tasks[first_model].append(instruction)
+                model_tasks[opponent_model].append(instruction)
+
+        # Process model responses in groups
+        model_groups = []
+        models_list = list(self.model_names)
+        for i in range(0, len(models_list), 2):
+            if i + 1 < len(models_list):
+                model_groups.append((models_list[i], models_list[i+1]))
+            else:
+                model_groups.append((models_list[i],))
+
+        model_responses = {}
+        with Pool(processes=len(model_groups)) as pool:
+            process_args = [
+                (group, model_tasks, gpu_id, self.model_paths, self.model_types)  
+                for gpu_id, group in enumerate(model_groups)
+            ]
+
+            results = pool.map(process_model_group, process_args)
+            
+            for group_responses in results:
+                model_responses.update(group_responses)
+
+        # Generate raw pairs
+        raw_pairs = []
+        for instruction, model_a, model_b in instruction_pairs:
+            if (model_a in model_responses and 
+                model_b in model_responses and
+                instruction in model_responses[model_a] and
+                instruction in model_responses[model_b]):
+                
+                response_list = [
+                    {
+                        'model_name': model_a,
+                        'response': model_responses[model_a][instruction]
+                    },
+                    {
+                        'model_name': model_b,
+                        'response': model_responses[model_b][instruction]
+                    }
+                ]
+                raw_pairs = self.pair(raw_pairs, instruction, response_list)
+        
+        return raw_pairs
+
+    def pair(self, raw_pairs: List[Dict], instruction: str, response_list: List[Dict]) -> List[Dict]:
+        """
+        organize the responses into pairs
+        
+        Args:
+            raw_pairs (List[Dict]): existing pairs list
+            instruction (str): current instruction
+            response_list (List[Dict]): list of responses, each element is a dictionary containing 'model_name' and 'response'
+        
+        Returns:
+            List[Dict]: updated pairs list
+        """
+        # check if the response list is valid
+        if len(response_list) != 2:
+            print(f"Invalid response list length: {len(response_list)}")
+            return raw_pairs
+
+        new_pair = {
+            'instruction': instruction,
+            'models': [resp['model_name'] for resp in response_list],
+            'responses': [resp['response'] for resp in response_list],
+            'judges': {} 
+        }
+
+        raw_pairs.append(new_pair)
+        return raw_pairs
+
+def judge_with_gpu(args):
+    """
+    Helper function for multiprocessing
+    Args:
+        args: tuple of (judge_name, judge_path, pairs, gpu_id)
+    Returns:
+        tuple: (judge_name, judged_pairs)
+    """
+    judge_name, pairs, judge_path, gpu_id = args
+    judge = Judge(judge_name, judge_path, gpu_id)
+    judged_pairs = judge.judge(pairs)
+    return judge_name, judged_pairs
+
+def save_judged_pairs(judged_pairs, base_dir, iteration):
+    """
+    save the judged pairs to the specified directory
+    
+    Args:
+        judged_pairs (List[Dict]): judged pairs
+        base_dir (str): base directory
+        iteration (int): current iteration
+    """
+    try:
+        save_dir = os.path.join(base_dir, f"iteration_{iteration}", "judged_results")
+        os.makedirs(save_dir, exist_ok=True)
+
+        file_path = os.path.join(save_dir, "judged_pairs.json")
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(judged_pairs, f, indent=2, ensure_ascii=False)
+            
+        print(f"\nJudged pairs saved to: {file_path}")
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = os.path.join(save_dir, f"judged_pairs_{timestamp}.json")
+        with open(backup_path, 'w', encoding='utf-8') as f:
+            json.dump(judged_pairs, f, indent=2, ensure_ascii=False)
+            
+        print(f"Backup saved to: {backup_path}")
+        
+    except Exception as e:
+        print(f"Error saving judged pairs: {e}")
+
+def save_preference_pairs_to_json(preference_pairs, base_dir, filename):
+    """
+    Save preference pairs to a JSON file in the specified directory.
+    
+    Args:
+        preference_pairs (list): The list of preference pairs to save
+        base_dir (str): Base directory path
+        filename (str): Name of the JSON file
+    """
+    try:
+        os.makedirs(base_dir, exist_ok=True)
+        
+        file_path = os.path.join(base_dir, filename)
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(preference_pairs, f, indent=2, ensure_ascii=False)
+        print(f"Preference pairs saved to {file_path}")
+        
+    except Exception as e:
+        print(f"Error saving preference pairs to JSON: {e}")
+
+def save_rating_history(rating_history, base_dir, iteration):
+    """
+    Save the detailed rating history to a JSON file in the specified directory.
+    
+    Args:
+        rating_history (list): List of rating snapshots after each pair
+        base_dir (str): Base directory path
+        iteration (int): Current iteration number
+    """
+    try:
+        os.makedirs(base_dir, exist_ok=True)
+        
+        file_path = os.path.join(base_dir, f"iteration_{iteration}_rating_history.json")
+        
+        history_data = {
+            'iteration': iteration,
+            'total_pairs': len(rating_history),
+            'history': rating_history,
+            'final_ratings': rating_history[-1]['ratings'] if rating_history else None,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(history_data, f, indent=2, ensure_ascii=False)
+        print(f"Detailed rating history saved to {file_path}")
+        
+    except Exception as e:
+        print(f"Error saving rating history to JSON: {e}")
+
+def extract_from_knowledge_crossword(file_path: str, num: int) -> List[str]:
+    """
+    Extract questions from the knowledge crossword dataset
+    
+    Args:
+        file_path: Path to the JSONL file
+        num: Number of questions to extract
+        
+    Returns:
+        List of instruction strings
+    """
+    try:
+        instructions = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    item = json.loads(line.strip())
+                    if 'prompt' in item:
+                        instructions.append(item['prompt'])
+                    else:
+                        print(f"Warning: Missing 'prompt' field in an item")
+                except json.JSONDecodeError:
+                    print(f"Warning: Invalid JSON in file")
+                    continue
+        
+        if not instructions:
+            print(f"Warning: No valid instructions found in {file_path}")
+            return []
+        
+        # Check if num is greater than available instructions
+        if num > len(instructions):
+            print(f"Warning: Requested {num} instructions but only {len(instructions)} are available")
+            return instructions  # Return all available instructions
+            
+        # Shuffle and limit the number of instructions
+        random.shuffle(instructions)
+        return instructions[:num]
+        
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}")
+        return []
+    except Exception as e:
+        print(f"Error extracting instructions: {e}")
+        return []
+
+
+def extract_from_alpaca(file_path: str, num: int) -> List[str]:
+    """
+    Extract questions from the alpaca dataset
+    
+    Args:
+        file_path: Path to the JSON file
+        num: Number of questions to extract
+        
+    Returns:
+        List of instruction strings
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Extract instructions from the data
+        instructions = []
+        for item in data:
+            if isinstance(item, dict) and 'instruction' in item:
+                instructions.append(item['instruction'])
+        
+        # Check if we found any instructions
+        if not instructions:
+            print(f"Warning: No instructions found in {file_path}")
+            return []
+            
+        # Shuffle and limit the number of instructions
+        random.shuffle(instructions)
+        return instructions[:num]
+        
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}")
+        return []
+    except json.JSONDecodeError:
+        print(f"Error: Invalid JSON format in {file_path}")
+        return []
+    except Exception as e:
+        print(f"Error extracting instructions: {e}")
+        return []
+    
+
+def extract_from_culture(file_path: str, num: int) -> List[str]:
+    """
+    Extract questions from the culture dataset, only from the 'train' split.
+    
+    Args:
+        file_path: Path to the JSON file
+        num: Number of questions to extract
+        
+    Returns:
+        List of instruction strings
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Only extract from the 'train' split
+        questions = []
+        
+        if 'train' in data:
+            train_data = data['train']
+            # For each item in the train split (indexed by IDs)
+            for item_id in train_data:
+                item = train_data[item_id]
+                if 'instruction' in item:
+                    questions.append(item['instruction'])
+        else:
+            print("Warning: No 'train' split found in the data")
+        
+        # Shuffle and limit the number of questions
+        random.shuffle(questions)
+        return questions[:num]
+    
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}")
+        return []
+    except Exception as e:
+        print(f"Error extracting questions: {e}")
+        return []
+
+def extract_from_json_truthfulqa(file_path: str, num: int) -> List[str]:
+    """
+    From the JSONL file, extract the specified number of unique questions.
+    
+    Args:
+        file_path (str): Path to the JSONL file
+        num (int): Number of questions to extract
+        
+    Returns:
+        List[str]: Extracted questions list (format: Q: ...\nA: ...)
+
+    Raises:
+        FileNotFoundError: When the file does not exist
+        json.JSONDecodeError: When JSON parsing fails
+    """
+    questions = []
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                try:
+                    # Parse JSON line
+                    item = json.loads(line.strip())
+                    
+                    # Extract question from prompt field
+                    if 'prompt' not in item:
+                        print(f"Warning: Missing 'prompt' field at line {line_num}")
+                        continue
+                        
+                    questions.append(item['prompt'])
+                    
+                except json.JSONDecodeError:
+                    print(f"Warning: Invalid JSON at line {line_num}")
+                    continue
+        
+        if not questions:
+            print(f"Warning: No valid questions found in {file_path}")
+            return []
+            
+        # Remove duplicates and shuffle
+        unique_questions = list(set(questions))
+        random.shuffle(unique_questions)
+        
+        # Handle requested number
+        available_num = len(unique_questions)
+        if num > available_num:
+            print(f"Warning: Requested {num} questions but only {available_num} available")
+
+            return unique_questions
+        print(unique_questions[:num])
+        return unique_questions[:num]
+        
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}")
+        return []
+    except Exception as e:
+        print(f"Error: Unexpected error while processing file: {str(e)}")
+        return []
+
+
+def extract_from_json_gsm(file_path: str, num: int) -> List[str]:
+    """
+    Extract a specified number of unique inputs from a JSON file.
+    
+    Args:
+        file_path (str): Path to the JSON file
+        num (int): Number of inputs to extract
+        
+    Returns:
+        List[str]: List of extracted inputs
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            inputs = [item['input'] for item in data]
+            
+        random.shuffle(inputs)
+        
+        return inputs[:num]
+            
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}")
+        return []
+    except Exception as e:
+        print(f"Error extracting inputs: {e}")
+        return []
+
+def extract_from_math(file_path: str, num: int, difficulty: str) -> List[str]:
+    """
+    Extract questions from the math dataset
+    
+    Args:
+        file_path (str): Path to the JSONL file
+        num (int): Number of problems to extract
+        
+    Returns:
+        List[str]: List of extracted problems with formatted prompts
+    """
+    try:
+        problems = []
+        if difficulty == 'easy':
+            file_path = os.path.join(file_path, 'train_by_difficulty', 'easy.jsonl')
+        elif difficulty == 'medium':
+            file_path = os.path.join(file_path, 'train_by_difficulty', 'medium.jsonl')
+        elif difficulty == 'hard':
+            file_path = os.path.join(file_path, 'train_by_difficulty', 'hard.jsonl')
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                data = json.loads(line)
+                prompt = data['problem'] + "Let's solve this problem step by step."
+                problems.append(prompt)
+
+        if num > len(problems):
+            print(f"Warning: Requested {num} problems but only {len(problems)} available")
+            random.shuffle(problems)
+            return problems
+
+        random.shuffle(problems)
+        return problems[:num]
+            
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}")
+        return []
+    except Exception as e:
+        print(f"Error extracting problems: {e}")
+        return []
+
+def extract_from_com2(file_path: str, num: int) -> List[str]:
+    """
+    Extract questions from the com2 dataset
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            instructions = [item['prompt'] for item in data]
+
+        if num > len(instructions):
+            print(f"Warning: Requested {num} instructions but only {len(instructions)} available")
+            random.shuffle(instructions)
+            return instructions
+
+        random.shuffle(instructions)
+        return instructions[:num]
+    except Exception as e:
+        print(f"Error extracting instructions: {e}")
+        return []
+    
+def cleanup_resources():
+    """more thorough resource cleanup function"""
+    try:
+
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                try:
+                    torch.cuda.set_device(i)
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                except:
+                    pass
+
+        import gc
+        gc.collect()
+
+        import psutil
+        process = psutil.Process()
+        try:
+            process.memory_full_info()
+        except:
+            pass
+
+        sleep(5)
+        
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
+
+def save_model_info(model_info: Dict, base_dir: str, iteration: int):
+    """save model_info to JSON file"""
+    try:
+        save_path = os.path.join(base_dir, f"iteration_{iteration}", "model_info.json")
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        
+        serializable_info = {}
+        for model_name, info in model_info.items():
+            serializable_info[model_name] = {
+                'score': float(info['score']),
+                'deviation': float(info['deviation'])
+            }
+        
+        with open(save_path, 'w', encoding='utf-8') as f:
+            json.dump(serializable_info, f, indent=2)
+            
+        logger.info(f"Model info saved to {save_path}")
+        
+    except Exception as e:
+        logger.error(f"Error saving model info: {e}")
+
+
+def save_judge_pairs(judge_pairs, output_dir, iteration):
+    """
+    save judge_pairs to the specified directory
+    
+    Args:
+        judge_pairs (list): list of judge pairs
+        output_dir (str): output directory
+        iteration (int): iteration number
+    """
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+
+        filepath = os.path.join(output_dir, f"iteration_{iteration}_judge_pairs.json")
+
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(judge_pairs, f, indent=2, ensure_ascii=False)
+            
+        print(f"Judge pairs saved to: {filepath}")
+        
+    except Exception as e:
+        print(f"Error saving judge pairs: {e}")
+
+def load_model_info(base_dir: str, iteration: int) -> Dict:
+    """load model_info from JSON file"""
+    try:
+        load_path = os.path.join(base_dir, f"iteration_{iteration}", "model_info.json")
+        
+        if os.path.exists(load_path):
+            with open(load_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            return {
+                model_name: {
+                    'score': 100,
+                    'deviation': 0.5
+                }
+                for model_name in ["code_alpaca", "cot", "flan_v2", "gemini_alpaca", 
+                                 "lima", "oasst1", "open_orca", "science", 
+                                 "sharegpt", "wizardlm"]
+            }
+            
+    except Exception as e:
+        logger.error(f"Error loading model info: {e}")
+        return None
+
+def filter_tie(preference_pairs):
+    """
+    filter the tie pairs
+    """
+    return [pair for pair in preference_pairs if pair['score_diff'] != 0]
+
+def main():
+    try:
+        parser = argparse.ArgumentParser(description='Competition Phase')
+        parser.add_argument('iteration', type=int, help='Current iteration number')
+        parser.add_argument('--fair', action='store_true', help='Use fair initialization')
+        parser.add_argument('--no-fair', action='store_false', dest='fair', help='Use unfair initialization')
+        parser.set_defaults(fair=True)
+        
+        # 修改 random_select 参数类型为 store_true/store_false
+        parser.add_argument('--random_select', type=lambda x: x.lower() == 'true', default=True,
+                          help='Use random match (true/false)')
+        
+        parser.add_argument('--task', type=str, default='gsm8k', help='Task name, choose from [gsm8k, alpaca, truthfulqa, culture_country, culture_value, culture_rule_of_thumb, knowledge_crossword]')
+        parser.add_argument('--base_model', type=str, default='gemma,gemma,gemma,gemma,gemma,gemma,gemma,gemma,gemma,gemma', 
+                          help='Comma-separated list of base model types, each corresponding to model_names at same index. Choose from [gemma, qwen, deepseek]')
+        parser.add_argument('--score_type', type=str, default='normal', 
+                          help='Score type: normal or dynamic')
+        parser.add_argument('--base_dir', type=str, required=True,
+                          help='Base directory for model storage')
+        parser.add_argument('--init_model_dir', type=str, required=True,
+                          help='Directory containing initial models')
+        parser.add_argument('--data_dir', type=str, required=True,
+                          help='Directory containing training data')
+        parser.add_argument('--gpu_ids', type=str, default='0,1,2,3,4',
+                          help='Comma-separated list of GPU IDs to use')
+
+        parser.add_argument('--num_instructions', type=int, default=500,
+                          help='Number of instructions to process')
+        parser.add_argument('--batch_size', type=int, default=16,
+                          help='Batch size for model inference')
+        parser.add_argument('--model_names', type=str, 
+                          default='code_alpaca,cot,flan_v2,gemini_alpaca,lima,oasst1,open_orca,science,sharegpt,wizardlm',
+                          help='Comma-separated list of model names')
+        parser.add_argument('--difficulty', type=str, default='easy',
+                          help='Difficulty level, choose from [easy, medium, hard]')
+
+        parser.add_argument('--random_match_prob', type=float, default=0.2,
+                          help='Probability of random opponent selection')
+        parser.add_argument('--num_opponents', type=int, default=3,
+                          help='Number of potential opponents to choose from')
+
+        parser.add_argument('--random_seed', type=int, default=42,
+                          help='Random seed for reproducibility')
+
+        parser.add_argument('--initial_k', type=float, default=10.0,
+                          help='Initial K factor for rating system')
+        parser.add_argument('--min_k', type=float, default=5.0,
+                          help='Minimum K factor for rating system')
+        parser.add_argument('--window_size', type=int, default=10,
+                          help='Window size for rating history')
+        parser.add_argument('--min_deviation', type=float, default=0.1,
+                          help='Minimum deviation threshold')
+        parser.add_argument('--epsilon', type=float, default=0.01,
+                          help='Epsilon for rating calculations')
+        parser.add_argument('--decay_rate', type=float, default=0.9,
+                          help='Decay rate for rating adjustments')
+        parser.add_argument('--decay_steps', type=int, default=10,
+                          help='Number of steps for decay')
+        parser.add_argument('--scaling_factor', type=float, default=20.0,
+                          help='Scaling factor for rating calculations')
+        parser.add_argument('--freeze_ratings', type=lambda x: x.lower() == 'true', default=False,
+                          help='Freeze model ratings and deviations (true/false)')
+        
+        args = parser.parse_args()
+
+        random.seed(args.random_seed)
+
+        model_names = args.model_names.split(',')
+        base_models = args.base_model.split(',')
+
+        # ensure the length of base_models and model_names are the same
+        if len(base_models) != len(model_names):
+            if len(base_models) == 1:
+                # if only one base_model is provided, copy it to all models
+                base_models = [base_models[0]] * len(model_names)
+            else:
+                raise ValueError(f"base_model list length ({len(base_models)}) must match model_names length ({len(model_names)})")
+
+        # create the mapping from model_name to base_model
+        model_base_mapping = dict(zip(model_names, base_models))
+
+        iteration = args.iteration
+        task = args.task
+        base_dir = args.base_dir
+        base_model_dir = base_dir
+        score_type = args.score_type
+        fair_or_not = args.fair
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_ids
+        gpu_ids = [int(i) for i in args.gpu_ids.split(',')]
+        
+
+        # Update model registration path
+        def model_register(model_name):
+            model_base = model_base_mapping[model_name]
+            if os.path.exists(os.path.join(args.init_model_dir, model_name)):
+                if fair_or_not:
+                    init_model_dir = os.path.join(args.init_model_dir, model_base)
+                    model_init = ModelInitFair(save_dir=init_model_dir, task=task, base_model=model_base)
+                else:
+                    init_model_dir = os.path.join(args.init_model_dir, model_base)
+                    model_init = ModelInit(save_dir=init_model_dir, task=task, base_model=model_base)
+                return model_init.init_model(model_name)
+            else:
+                if fair_or_not:
+                    init_model_dir = os.path.join(args.init_model_dir, model_base)
+                    model_init = ModelInitFair(save_dir=init_model_dir, task=task, base_model=model_base)
+                else:
+                    init_model_dir = os.path.join(args.init_model_dir, model_base)
+                    model_init = ModelInit(save_dir=init_model_dir, task=task, base_model=model_base)
+                model_init.init_model_local(model_name)
+                return model_init.init_model(model_name)
+
+        for module_name in list(sys.modules.keys()):
+            if 'unsloth' in module_name:
+                del sys.modules[module_name]
+        
+        if iteration > 0:
+            model_info = load_model_info(base_dir, iteration - 1)
+            if model_info is None:
+                raise ValueError(f"Failed to load model info from iteration {iteration-1}")
+        else:
+            model_info = {
+                model_name: model_register(model_name)
+                for model_name in model_names
+            }
+
+        print(f"Running iteration {iteration}")
+
+        for model_name in model_names:
+            if model_name not in model_info:
+                model_info[model_name] = model_register(model_name)
+        
+        if iteration > 0:
+            for model_name in model_names:
+                model_path = os.path.join(base_model_dir, f"iteration_{iteration-1}", model_name)
+
+                if model_name in model_info:
+                    model_info[model_name]['path'] = model_path
+
+        model_configs = []
+        for model_name in model_names:
+            model_type = model_base_mapping[model_name]
+            
+            if iteration == 0:
+                # The format of the initial model path: init_model_dir/model_type/model_name
+                model_path = os.path.join(args.init_model_dir, model_type, model_name)
+            else:
+                # Non-initial iteration: use the results of the previous round
+                model_path = os.path.join(base_model_dir, f"iteration_{iteration-1}", model_name)
+            
+            output_path = os.path.join(base_model_dir, f"iteration_{iteration}", model_name)
+            
+            model_configs.append({
+                "name": model_name,
+                "path": model_path,
+                "output_path": output_path,
+                "learning_rate": 1e-5,
+                "model_type": model_type
+            })
+        
+        if args.random_select:
+            competition = Competition(
+                model_configs, 
+                model_info, 
+                num_opponents=args.num_opponents,
+                random_match_prob=args.random_match_prob,
+                is_random_select=True
+            )
+        else:
+            competition = Competition(
+                model_configs, 
+                model_info, 
+                num_opponents=args.num_opponents,
+                random_match_prob=args.random_match_prob,
+                is_random_select=False
+            )
+
+        if task == 'gsm8k':
+            total_instructions = extract_from_json_gsm(
+                os.path.join(args.data_dir, 'gsm8k/questions.json'),
+                args.num_instructions
+            )
+        elif task == 'truthfulqa_mc1,truthfulqa_mc2':
+            total_instructions = extract_from_json_truthfulqa(
+                os.path.join(args.data_dir, 'truthfulqa/data_train.jsonl'),
+                args.num_instructions
+            )
+        elif task == 'culture_country':
+            total_instructions = extract_from_culture(
+                os.path.join(args.data_dir, 'culture/country_dataset.json'),
+                args.num_instructions
+            )
+        elif task == 'culture_value':
+            total_instructions = extract_from_culture(
+                os.path.join(args.data_dir, 'culture/country_value_dataset.json'),
+                args.num_instructions
+            )
+        elif task == 'culture_rule_of_thumb':
+            total_instructions = extract_from_culture(
+                os.path.join(args.data_dir, 'culture/rule_of_thumb_dataset.json'),
+                args.num_instructions
+            )
+        elif task == 'alpaca':
+            total_instructions = extract_from_alpaca(
+                os.path.join(args.data_dir, 'alpaca/alpaca_data_processed.json'),
+                args.num_instructions
+            )
+        elif task == 'kc_knowledge':
+            total_instructions = extract_from_knowledge_crossword(
+                os.path.join(args.data_dir, 'knowledge_crossword/KC_train_knowledge.jsonl'),
+                args.num_instructions
+            )
+        elif task == 'kc_zeroshot':
+            total_instructions = extract_from_knowledge_crossword(
+                os.path.join(args.data_dir, 'knowledge_crossword/KC_train_zeroshot.jsonl'),
+                args.num_instructions
+            )
+        elif task == 'math':
+            total_instructions = extract_from_math(
+                os.path.join(args.data_dir, 'MATH'),
+                args.num_instructions,
+                args.difficulty
+            )
+        elif task == 'com2':
+            total_instructions = extract_from_com2(
+                os.path.join(args.data_dir, 'com2/train.json'),
+                args.num_instructions
+            )
+        else:
+            raise ValueError(f"Invalid task: {task}")
+                
+        all_judged_pairs = []
+        instructions_per_round = args.num_instructions
+        num_rounds = 1
+        
+        for round_num in range(num_rounds):
+            start_idx = round_num * instructions_per_round
+            end_idx = start_idx + instructions_per_round
+            round_instructions = total_instructions[start_idx:end_idx]
+            
+            print(f"\nProcessing round {round_num + 1}/{num_rounds} with {len(round_instructions)} instructions")
+            
+            raw_pairs = competition.run(round_instructions)
+            print(f"Generated {len(raw_pairs)} pairs in round {round_num + 1}")
+            
+            judged_pairs = run_judges(
+                model_configs=model_configs,
+                pairs=raw_pairs,
+                gpu_ids=gpu_ids,
+                batch_size=args.batch_size,
+                round_num=1,
+                base_dir=base_dir,
+                base_model=base_models[0] if len(base_models) > 0 else "gemma"  # 使用第一个base_model作为默认值
+            )
+
+            all_judged_pairs.extend(judged_pairs)
+            print(f"Completed round {round_num + 1} with total {len(all_judged_pairs)} judged pairs")
+            
+            cleanup_resources()
+        all_judged_pairs = calculate_judge_averages(all_judged_pairs)
+        save_judge_pairs(all_judged_pairs, base_model_dir, iteration)
+
+        history_path = os.path.join(base_dir, "rating_deltas.json")
+        if os.path.exists(history_path):
+            try:
+                with open(history_path, 'r') as f:
+                    delta_history = json.load(f)
+                    for model in model_names:
+                        if model in delta_history:
+                            delta_history[model] = delta_history[model][-10:]
+                        else:
+                            delta_history[model] = []
+            except Exception as e:
+                logger.warning(f"Failed to load delta history: {e}")
+                delta_history = {model: [] for model in model_names}
+        else:
+            delta_history = {model: [] for model in model_names}
+        if args.score_type == 'normal':
+            rating_system = RatingSystem(
+                model_info,
+                initial_K=args.initial_k,
+                min_K=args.min_k,
+                delta_history=delta_history,
+                window_size=args.window_size,
+                min_deviation=args.min_deviation,
+                epsilon=args.epsilon,
+                decay_rate=args.decay_rate,
+                decay_steps=args.decay_steps,
+                scaling_factor=args.scaling_factor,
+                freeze_ratings=args.freeze_ratings
+            )
+        elif args.score_type == 'dynamic':
+            rating_system = RatingSystemDynamicWeighted(
+                model_info,
+                initial_K=args.initial_k,
+                min_K=args.min_k,
+                delta_history=delta_history,
+                base_dir=args.base_dir,
+                current_iteration=args.iteration,
+                window_size=args.window_size,
+                min_deviation=args.min_deviation,
+                epsilon=args.epsilon,
+                decay_rate=args.decay_rate,
+                decay_steps=args.decay_steps,
+                scaling_factor=args.scaling_factor,
+                freeze_ratings=args.freeze_ratings
+            )
+        elif args.score_type == 'static':
+            rating_system = RatingSystemStaticWeighted(
+                model_info,
+                initial_K=args.initial_k,
+                min_K=args.min_k,
+                delta_history=delta_history,
+                base_dir=args.base_dir,
+                current_iteration=args.iteration,
+                window_size=args.window_size,
+                min_deviation=args.min_deviation,
+                epsilon=args.epsilon,
+                decay_rate=args.decay_rate,
+                decay_steps=args.decay_steps,
+                scaling_factor=args.scaling_factor,
+                freeze_ratings=args.freeze_ratings
+            )
+
+        rating_history = []
+        
+        for i, pair in enumerate(all_judged_pairs):
+            if isinstance(pair, dict):
+                rating_system.update_ratings_from_judges(pair)
+            elif isinstance(pair, list):
+                rating_system.update_ratings_from_judges(pair)
+            else:
+                print(f"Invalid pair format: {type(pair)}")
+            
+            current_ratings = rating_system.get_all_ratings()
+            rating_history.append({
+                'pair_index': i,
+                'pair': pair,
+                'ratings': {
+                    model: {
+                        'score': info['score'],
+                        'deviation': info['deviation']
+                    }
+                    for model, info in current_ratings.items()
+                }
+            })
+            model_info = current_ratings
+        
+        print("\nFinal Ratings:")
+        for model, rating in model_info.items():
+            print(f"{model}: score={rating['score']:.2f}, deviation={rating['deviation']:.4f}")
+        
+        preference_pairs = []
+        for pair in raw_pairs:
+            preference = rating_system.select_preference_response(pair)
+            if preference:
+                preference_pairs.append(preference)
+        old_pairs_len = len(preference_pairs)
+
+        preference_pairs = filter_tie(preference_pairs)
+        logger.info(f"After filtering tie pairs: {len(preference_pairs)}")
+
+        if old_pairs_len > len(preference_pairs) * 0.5: 
+            logger.warning(f"Warning: Large number of ties filtered out. "
+                        f"Original: {old_pairs_len}, "
+                        f"After filtering: {len(preference_pairs)}")
+            
+        save_preference_pairs_to_json(
+            preference_pairs, 
+            os.path.join(base_model_dir, f"iteration_{iteration}", "dataset"),
+            "preference_pairs.json"
+        )
+
+        save_rating_history(rating_history, base_model_dir, iteration)
+        
+        print(f"\nCompleted iteration {iteration}")
+
+        save_model_info(model_info, base_dir, iteration)
+        
+    except Exception as e:
+        logger.error(f"Main error: {e}")
+        sys.exit(1)
+    finally:
+        cleanup_resources()
+
+if __name__ == '__main__':
+    if mp.get_start_method(allow_none=True) != 'spawn':
+        mp.set_start_method('spawn')
+    try:
+        main()
+    except Exception as e:
+        print(f"Error in __main__: {e}")
+        sys.exit(1)
+
+ 
+from inference import Inference
+import time
+import multiprocessing
+from multiprocessing import Pool
+from functools import partial
+import os
+import torch
+import json
+from typing import List, Dict
+import re
+import math
+import numpy as np
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+class Judge:
+    def __init__(self, judge_name, judge_path, gpu_id, batch_size, round_num=3, base_model='qwen'):
+        """
+        Initialize judge with specific GPU
+        Args:
+            judge_name (str): name of the judge model (e.g., 'gemini_alpaca')
+            judge_path (str): path of the judge model
+            gpu_id (int): GPU device ID to use
+            batch_size (int): batch size for inference
+        """
+        self.judge_name = judge_name
+        self.judge_path = judge_path
+        self.gpu_id = gpu_id
+        print(f"Using GPU: {self.gpu_id}")
+        self.inferencer = None
+        self.batch_size = batch_size
+        self.round_num = round_num
+        self.base_model = base_model
+    def judge(self, pairs):
+        """
+        Process pairs with improved memory management
+        """
+        valid_pairs = [
+            pair for pair in pairs
+            if self.judge_name not in pair['models']
+        ]
+
+        if not valid_pairs:
+            return pairs
+
+        try:
+            if self.inferencer is None:
+                self.inferencer = Inference(self.judge_name, self.gpu_id, self.judge_path, self.base_model)
+
+            # batch process pairs
+            sub_batch_size = 10  # smaller batch size
+            for start_idx in range(0, len(valid_pairs), sub_batch_size):
+                end_idx = min(start_idx + sub_batch_size, len(valid_pairs))
+                current_pairs = valid_pairs[start_idx:end_idx]
+                
+                try:
+                    self._process_pairs_batch(current_pairs)
+                except Exception as e:
+                    print(f"Error processing batch {start_idx//sub_batch_size}: {e}")
+                finally:
+                    torch.cuda.empty_cache()
+
+        except Exception as e:
+            print(f"Error in judge process on GPU {self.gpu_id}: {e}")
+            
+        return pairs
+
+    def _process_pairs_batch(self, pairs_batch):
+        """process a batch of pairs"""
+        all_judgements = []
+        for round_num in range(self.round_num):
+            round_results = self._process_single_round(pairs_batch)
+            all_judgements.append(round_results)
+            
+        # update the results
+        self._update_pairs_with_judgements(pairs_batch, all_judgements)
+
+    def _cleanup(self):
+        """clean up the resources"""
+        if self.inferencer is not None:
+            try:
+                del self.inferencer
+            except:
+                pass
+            self.inferencer = None
+        try:
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        except:
+            pass
+
+    def _process_single_round(self, pairs_batch):
+        """process a single round of pairs"""
+        processed_results = {}
+        responses = []
+        all_instructions = []
+        instruction_map = {}
+
+        for idx, pair in enumerate(pairs_batch):
+            for resp_idx, response in enumerate(pair['responses']):
+                instruction = f"""
+Please judge the following response based on the question and the response to be evaluated.
+Question: {pair['instruction']}
+Response to be evaluated: {response}
+
+Operation: Output ONLY a JSON object with one score in this exact format. Score must be in the range of 1 to 10.
+Your output should be like this:
+{{"score": score}}
+"""
+                all_instructions.append(instruction)
+                instruction_map[len(all_instructions)-1] = (idx, resp_idx)
+
+        for i in range(0, len(all_instructions), self.batch_size):
+            batch_instructions = all_instructions[i:i + self.batch_size]
+            try:
+                if self.base_model == "qwen" or self.base_model == "gemma":
+                    use_chat_template = True
+                else:
+                    use_chat_template = False
+                batch_responses = self.inferencer.judge_batch_generate_responses(
+                    instructions=batch_instructions,
+                    batch_size=self.batch_size,
+                    max_new_tokens=256,
+                    use_chat_template=use_chat_template,
+                )
+                responses.extend(batch_responses)
+            except Exception as e:
+                print(f"Error processing batch {i//self.batch_size} on GPU {self.gpu_id}: {e}")
+                responses.extend([None] * len(batch_instructions))
+
+        round_results = {}
+        for inst_idx, response in enumerate(responses):
+            pair_idx, resp_idx = instruction_map[inst_idx]
+            
+            if pair_idx not in round_results:
+                round_results[pair_idx] = {}
+            
+            if resp_idx not in round_results[pair_idx]:
+                round_results[pair_idx][resp_idx] = {
+                    'score': None,
+                    'response': response,
+                    'error': None
+                }
+            
+            if response is not None:
+                score = self.extract_single_score(response)
+                if score is not None:
+                    round_results[pair_idx][resp_idx]['score'] = score
+                else:
+                    round_results[pair_idx][resp_idx]['error'] = "Failed to extract score"
+
+        return round_results
+
+    def _update_pairs_with_judgements(self, pairs_batch, all_judgements):
+        """update the judgements of pairs"""
+        for idx, pair in enumerate(pairs_batch):
+            if 'judges' not in pair:
+                pair['judges'] = {}
+            
+            pair['judges'][self.judge_name] = {
+                'rounds': []
+            }
+            
+            for round_num, round_results in enumerate(all_judgements):
+                results = round_results.get(idx, {})
+                
+                has_any_error = (
+                    results.get(0, {}).get('error') is not None or 
+                    results.get(1, {}).get('error') is not None
+                )
+                
+                if has_any_error:
+                    scores = [5.0, 5.0]
+                    default_scores_used = True
+                else:
+                    scores = []
+                    for i in range(2):
+                        if i in results and results[i].get('score') is not None:
+                            scores.append(results[i]['score'])
+                        else:
+                            scores.append(5.0)
+                    default_scores_used = len(scores) != 2
+                
+                round_data = {
+                    'scores': scores,
+                    'responses': {
+                        'response_0': results.get(0, {}).get('response'),
+                        'response_1': results.get(1, {}).get('response'),
+                        'error_0': results.get(0, {}).get('error'),
+                        'error_1': results.get(1, {}).get('error'),
+                        'default_scores_used': default_scores_used
+                    }
+                }
+                
+                pair['judges'][self.judge_name]['rounds'].append(round_data)
+
+    def extract_single_score(self, response):
+        """        
+        Args:
+            response (str): response from judge
+        Returns:
+            int or None: extracted score, return None if extraction fails
+        """
+        if response is None:
+            print("Error: Response is None")
+            return None
+        
+        try:
+            response = response.strip()
+
+            try:
+                data = json.loads(response)
+                if 'score' in data:
+                    score = data['score']
+                    if isinstance(score, (int, float)) and 0 <= score <= 10:
+                        return int(score)
+            except json.JSONDecodeError:
+                pass
+        
+            patterns = [
+                r'{\s*"score"\s*:\s*(\d+)\s*}', 
+                r'"score"\s*:\s*(\d+)',       
+                r'score\s*[:=]\s*(\d+)',    
+                r'Score:\s*(\d+)',              
+                r'(\d+)\s*/\s*10'               
+            ]
+            
+            for pattern in patterns:
+                matches = re.findall(pattern, response, re.IGNORECASE)  
+                for match in matches:
+                    try:
+                        score = int(match)
+                        if 1 <= score <= 10:
+                            return score
+                    except:
+                        continue
+            
+            print(f"No valid score found in response: {response[:200]}")
+            return None
+                
+        except Exception as e:
+            print(f"Unexpected error in extract_single_score: {e}")
+            print(f"Response content: {response[:200]}")
+            return None
+
+    def _validate_score(self, score):
+        """
+        Validate a single score
+        
+        Args:
+            score: score to validate
+        Returns:
+            bool: whether the score is valid
+        """
+        try:
+            return (isinstance(score, (int, float)) and 1 <= score <= 10)
+        except:
+            return False
+
+    def update_ratings_from_judges(self, pairs: List[Dict]) -> None:
+        """
+        Update ratings based on averaged scores from three rounds of judgements
+        """
+        if isinstance(pairs, dict):
+            pairs = [pairs]
+        elif not isinstance(pairs, list):
+            raise ValueError("Input must be a dictionary or list of dictionaries")
+
+        if not hasattr(self, 'update_count'):
+            self.update_count = 0
+        self.update_count += 1
+        
+        decay_rate = 0.9
+        self.K = max(self.min_K, self.initial_K * (decay_rate ** (self.update_count / 10)))
+
+        model_deltas = {model: [] for model in self.model_ratings}
+        old_scores = {model: self.model_ratings[model]['score'] for model in self.model_ratings}
+        old_deviations = {model: self.model_ratings[model]['deviation'] for model in self.model_ratings}
+
+        for pair in pairs:
+            if not isinstance(pair, dict) or 'models' not in pair or 'judges' not in pair:
+                continue
+
+            model_a, model_b = pair['models']
+            numerator = 0
+            denominator = 0
+            
+            for judge_name, judge_info in pair['judges'].items():
+                if judge_name in [model_a, model_b] or 'rounds' not in judge_info:
+                    continue
+                    
+                judge_rating = self.model_ratings[judge_name]['score']
+                
+                # Get all valid scores from rounds
+                round_scores = []
+                for round_data in judge_info['rounds']:
+                    if not round_data.get('default_scores_used', True):
+                        round_scores.append(round_data['scores'])
+                
+                # Skip judge if no valid scores
+                if not round_scores:
+                    continue
+
+                avg_score_a = sum(scores[0] for scores in round_scores) / len(round_scores)
+                avg_score_b = sum(scores[1] for scores in round_scores) / len(round_scores)
+                
+                numerator += judge_rating * (avg_score_a - avg_score_b)
+                denominator += judge_rating
+
+            if denominator == 0:
+                continue
+
+            score_diff = numerator / denominator
+
+            for i, model_i in enumerate([model_a, model_b]):
+                R_i = self.model_ratings[model_i]['score']
+                R_next = self.model_ratings[model_b if i == 0 else model_a]['score']
+                sigma_i = self.model_ratings[model_i]['deviation']
+                sigma_next = self.model_ratings[model_b if i == 0 else model_a]['deviation']
+
+                combined_deviation = math.sqrt(sigma_i**2 + sigma_next**2)
+                phi_forward = 0.5 * (1 + math.erf((R_i - R_next) / (math.sqrt(2) * combined_deviation)))
+                phi_backward = 0.5 * (1 + math.erf((R_next - R_i) / (math.sqrt(2) * combined_deviation)))
+                
+                delta = (self.K 
+                        * (score_diff if i == 0 else -score_diff)
+                        * math.tanh(sigma_i)
+                        * max(abs(phi_forward - phi_backward), self.epsilon))
+
+                old_score = self.model_ratings[model_i]['score']
+                new_score = max(10, old_score + delta)
+                actual_delta = new_score - old_score
+                
+                model_deltas[model_i].append(actual_delta)
+                self.model_ratings[model_i]['score'] = new_score
+
+        # Update deviations
+        for model in model_deltas:
+            if model_deltas[model]:
+                self.delta_history[model].extend(model_deltas[model])
+                self.delta_history[model] = self.delta_history[model][-self.window_size:]
+                
+                if len(self.delta_history[model]) >= 2:
+                    new_deviation = np.std(self.delta_history[model])
+                    min_deviation = 0.1
+                    self.model_ratings[model]['deviation'] = max(new_deviation, min_deviation)
+
+        print(f"\nUpdate count: {self.update_count}")
+        print(f"Current K value: {self.K:.2f}")
+        print("\nDeviation changes:")
+        for model in self.model_ratings:
+            if model in old_deviations:
+                print(f"{model}: {old_deviations[model]:.4f} -> {self.model_ratings[model]['deviation']:.4f}")
+
+def judge_with_gpu(args):
+    """
+    Helper function for multiprocessing
+    """
+    try:
+        judge_name, pairs, judge_path, gpu_id, batch_size, round_num, base_model = args
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+        torch.cuda.set_device(0)  
+        
+        print(f"Process for {judge_name} using GPU {gpu_id}")
+        judge = Judge(judge_name, judge_path, 0, batch_size, round_num, base_model)
+        judged_pairs = judge.judge(pairs)
+        return judge_name, judged_pairs
+        
+    except Exception as e:
+        print(f"Error in judge_with_gpu for {judge_name}: {e}")
+        return judge_name, pairs
+    finally:
+        try:
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        except:
+            pass
+
+def cleanup_resources():
+    """More thorough resource cleanup function"""
+    try:
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                try:
+                    torch.cuda.set_device(i)
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                except:
+                    pass
+        
+        import gc
+        gc.collect()
+        
+        import psutil
+        process = psutil.Process()
+        try:
+            process.memory_full_info()
+        except:
+            pass
+            
+        time.sleep(2)
+        
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
+        
+
+def process_with_single_judge(judge_config: Dict, pairs: List[Dict], gpu_id: int, 
+                            batch_size: int, round_num: int, base_dir: str, base_model: str) -> None:
+    """single judge process all data and save intermediate results"""
+    try:
+        judge_name = judge_config["name"]
+        judge_path = judge_config["path"]
+        # get the model_type from model_config, if not provided, use the base_model
+        judge_model_type = judge_config.get("model_type", base_model)
+        output_dir = os.path.join(base_dir, f"intermediate_results/{judge_name}")
+        os.makedirs(output_dir, exist_ok=True)
+
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+        torch.cuda.set_device(0)
+
+        print(f"Initializing {judge_name} on GPU {gpu_id} with model_type {judge_model_type}")
+        judge = Judge(
+            judge_name=judge_name, 
+            judge_path=judge_path, 
+            gpu_id=0, 
+            batch_size=batch_size, 
+            base_model=judge_model_type,  # use the model_type from config
+            round_num=round_num
+        )
+        
+        try:
+            # initialize the model
+            if judge.inferencer is None:
+                judge.inferencer = Inference(
+                    model_name=judge_name, 
+                    gpu_id=0, 
+                    model_path=judge_path, 
+                    base_model=judge_model_type  # use the model_type from config
+                )
+            
+            # chunk process data
+            chunk_size = 50
+            pair_chunks = [pairs[i:i + chunk_size] for i in range(0, len(pairs), chunk_size)]
+            
+            all_judged_pairs = []
+            for chunk_idx, chunk in enumerate(pair_chunks):
+                print(f"Processing chunk {chunk_idx + 1}/{len(pair_chunks)} with {judge_name}")
+                
+                valid_pairs = [
+                    pair for pair in chunk
+                    if judge_name not in pair['models']
+                ]
+                
+                if valid_pairs:
+                    # process the current chunk
+                    for start_idx in range(0, len(valid_pairs), judge.batch_size):
+                        end_idx = min(start_idx + judge.batch_size, len(valid_pairs))
+                        current_pairs = valid_pairs[start_idx:end_idx]
+                        judge._process_pairs_batch(current_pairs)
+                
+                # save the processed chunk results
+                save_path = os.path.join(output_dir, f"chunk_{chunk_idx}.json")
+                with open(save_path, 'w') as f:
+                    json.dump(chunk, f)
+                
+                all_judged_pairs.extend(chunk)
+                
+            print(f"Completed processing all chunks with {judge_name}")
+            return all_judged_pairs
+            
+        except Exception as e:
+            print(f"Error processing chunks with {judge_name}: {e}")
+            return pairs
+            
+    except Exception as e:
+        print(f"Error processing with {judge_name}: {e}")
+        return pairs
+    finally:
+        if judge:
+            judge._cleanup()
+        cleanup_resources()
+
+def merge_judge_results(pairs: List[Dict], model_configs: List[Dict], base_dir: str) -> List[Dict]:
+    """merge all judge results"""
+    final_pairs = pairs.copy()
+    
+    for config in model_configs:
+        judge_name = config["name"]
+        output_dir = os.path.join(base_dir, "intermediate_results", judge_name)
+        print(f"Merging results for judge: {judge_name} from {output_dir}")
+
+        if not os.path.exists(output_dir):
+            print(f"Warning: Directory not found for judge {judge_name}")
+            continue
+
+        chunk_files = sorted(os.listdir(output_dir), key=lambda x: int(x.split('_')[1].split('.')[0]))
+        
+        start_idx = 0
+        merged_count = 0
+        for chunk_file in chunk_files:
+            with open(os.path.join(output_dir, chunk_file), 'r') as f:
+                chunk_results = json.load(f)
+                
+            for i, pair in enumerate(chunk_results):
+                if 'judges' in pair and judge_name in pair['judges']:
+                    idx = start_idx + i
+                    if idx < len(final_pairs):
+                        if 'judges' not in final_pairs[idx]:
+                            final_pairs[idx]['judges'] = {}
+                        final_pairs[idx]['judges'][judge_name] = pair['judges'][judge_name]
+                        merged_count += 1
+                        
+            start_idx += len(chunk_results)
+        
+        print(f"Merged {merged_count} results for {judge_name}")
+    
+    return final_pairs
+
+def run_judges(model_configs: List[Dict], pairs: List[Dict], gpu_ids: List[int], 
+               batch_size: int = 4, round_num: int = 5, base_dir: str = None, 
+               base_model: str = "gemma") -> List[Dict]:
+    """modified main function, process each group in parallel, and process each group sequentially"""
+    try:
+        # split the model configs into two groups
+        mid_point = len(model_configs) // 2
+        model_groups = [
+            model_configs[:mid_point],  # the first group of models
+            model_configs[mid_point:]   # the second group of models
+        ]
+        
+        final_pairs = pairs.copy()
+        
+        # sequentially process each group of models
+        for group_idx, model_group in enumerate(model_groups):
+            print(f"Processing model group {group_idx + 1}/{len(model_groups)}")
+            
+            # create the process arguments for the current group of judges
+            pool_args = [
+                (config, pairs, gpu_id, batch_size, round_num, base_dir, base_model)  # 确保正确的参数顺序
+                for config, gpu_id in zip(model_group, gpu_ids[:len(model_group)])
+            ]
+            
+            # process all judges in the current group in parallel
+            ctx = multiprocessing.get_context('spawn')
+            with ctx.Pool(processes=len(model_group)) as pool:
+                results = pool.starmap(process_with_single_judge, pool_args)
+            
+            # merge the results of the current group
+            for args, _ in zip(pool_args, results):
+                final_pairs = merge_judge_results(final_pairs, [{"name": args[0]["name"]}], base_dir)
+
+            cleanup_resources()
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+
+            if group_idx < len(model_groups) - 1:
+                print("Waiting for GPUs to cool down before processing next group...")
+                time.sleep(30)
+        
+        return final_pairs
+        
+    except Exception as e:
+        print(f"Error during judging setup: {str(e)}")
+        return pairs
+    finally:
+        cleanup_resources()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+def calculate_judge_averages(data: list) -> list:
+    """
+    Calculate average scores for each judge's responses, excluding rounds where default_scores_used is true
+    
+    Args:
+        data (list): Input data array
+        
+    Returns:
+        list: Processed data array with average scores
+    """
+    for item in data:
+        judges = item['judges']
+        
+        for judge_name, judge_data in judges.items():
+            rounds = judge_data['rounds']
+            scores_response0 = []  
+            scores_response1 = [] 
+            all_default = True  
+            
+            for round_data in rounds:
+
+                if not round_data.get('default_scores_used', False):
+                    all_default = False
+                    scores = round_data['scores']
+                    if len(scores) >= 2: 
+                        scores_response0.append(scores[0])
+                        scores_response1.append(scores[1])
+
+            if all_default:
+                judge_data['ave_scores'] = [5.0, 5.0]
+            else:
+                ave_score0 = np.mean(scores_response0) if scores_response0 else 0
+                ave_score1 = np.mean(scores_response1) if scores_response1 else 0
+                
+                judge_data['ave_scores'] = [
+                    float(f"{ave_score0:.2f}"),
+                    float(f"{ave_score1:.2f}")
+                ]
+    
+    return data
+
+import numpy as np
+from typing import List, Dict, Tuple, Optional
+import math
+import json
+import random
+import matplotlib.pyplot as plt
+import os
+
+class RatingSystem:
+    def __init__(self, model_scores: Dict[str, Dict[str, float]], 
+                 initial_K: float, 
+                 min_K: float,
+                 delta_history: Dict[str, List[float]] = None,
+                 window_size: int = 10,
+                 min_deviation: float = 0.1,
+                 epsilon: float = 0.01,
+                 decay_rate: float = 0.9,
+                 decay_steps: int = 10,
+                 scaling_factor: float = 20.0,
+                 freeze_ratings: bool = False):
+        """
+        Initialize the rating system with pre-defined model scores
+        Args:
+            model_scores: Dictionary of model scores and deviations
+            initial_K: Initial scaling factor for rating updates
+            min_K: Minimum value for K
+            delta_history: Optional historical delta values for each model
+            window_size: Size of window for calculating deviation
+            min_deviation: Minimum allowed deviation value
+            epsilon: Small constant to prevent division by zero
+            decay_rate: Rate at which K decays
+            decay_steps: Number of steps for K decay
+            scaling_factor: Factor to scale delta updates
+            freeze_ratings: Boolean to freeze ratings and deviations
+        """
+        self.initial_K = initial_K
+        self.min_K = min_K
+        self.K = initial_K
+        self.model_ratings = model_scores.copy()
+        self.window_size = window_size
+        self.min_deviation = min_deviation
+        self.epsilon = epsilon
+        self.decay_rate = decay_rate
+        self.decay_steps = decay_steps
+        self.scaling_factor = scaling_factor
+        self.freeze_ratings = freeze_ratings
+
+        if delta_history is None:
+            self.delta_history = {model: [] for model in model_scores}
+        else:
+            self.delta_history = delta_history
+
+            for model in model_scores:
+                if model in delta_history and len(delta_history[model]) >= 2:
+                    new_deviation = np.std(delta_history[model])
+                    self.model_ratings[model]['deviation'] = max(new_deviation, self.min_deviation)
+
+    def select_preference_response(self, pair: Dict) -> Dict:
+        """
+        Select preference response based on weighted judge scores
+        Args:
+            pair: {
+                'instruction': str,
+                'models': [model1, model2],
+                'responses': [response1, response2],
+                'judges': {
+                    'judge_name1': {
+                        'scores': [score1, score2],
+                        'responses': {
+                            'normal': str,
+                            'inverse': str,
+                            'default_scores_used': bool
+                        }
+                    },
+                    'judge_name2': {...},
+                }
+            }
+        Returns:
+            Dict: {
+                'instruction': str,
+                'chosen': str,      # better response
+                'rejected': str,    # worse response
+                'chosen_model': str,
+                'rejected_model': str,
+                'score_diff': float,  # weighted score difference
+                'weighted_scores': [float, float]  # weighted scores for both responses
+            }
+        """
+        model_a, model_b = pair['models']
+        response_a, response_b = pair['responses']
+
+        total_weight = 0
+        weighted_score_a = 0
+        weighted_score_b = 0
+        
+        for judge_name, judge_info in pair['judges'].items():
+            if judge_name in [model_a, model_b]:  # Skip if judge is one of the models
+                continue
+
+            judge_weight = self.model_ratings[judge_name]['score']
+            
+            score_a, score_b = judge_info['ave_scores']
+            
+            weighted_score_a += judge_weight * score_a
+            weighted_score_b += judge_weight * score_b
+            total_weight += judge_weight
+
+        if total_weight == 0:
+            return None
+
+        # Normalize weighted scores
+        weighted_score_a /= total_weight
+        weighted_score_b /= total_weight
+        score_diff = weighted_score_a - weighted_score_b
+
+        # Select preference based on weighted scores
+        if weighted_score_a > weighted_score_b:
+            preference = {
+                'instruction': pair['instruction'],
+                'chosen': response_a,
+                'rejected': response_b,
+                'chosen_model': model_a,
+                'rejected_model': model_b,
+                'score_diff': score_diff,
+                'weighted_scores': [weighted_score_a, weighted_score_b]
+            }
+        else:
+            preference = {
+                'instruction': pair['instruction'],
+                'chosen': response_b,
+                'rejected': response_a,
+                'chosen_model': model_b,
+                'rejected_model': model_a,
+                'score_diff': -score_diff,
+                'weighted_scores': [weighted_score_b, weighted_score_a]
+            }
+
+        return preference
+
+    def update_ratings_from_judges(self, pairs: List[Dict]) -> None:
+        """
+        Update ratings based on the exact formula:
+        R_i' = R_i 
+               + K * ( sum_{j not in {a,b}} [ R_j * (s_{j,i} - s_{j,i+1}) ] / sum_{j not in {a,b}} R_j )
+               * tanh(σ_i)
+               * max(|Φ((R_i - R_{i+1})/sqrt(σ_i²+σ_{i+1}²)) - Φ((R_{i+1} - R_i)/sqrt(σ_i²+σ_{i+1}²))|, ε)
+        """
+        if self.freeze_ratings:
+            return
+
+        if isinstance(pairs, dict):
+            pairs = [pairs]
+        elif not isinstance(pairs, list):
+            raise ValueError("Input must be a dictionary or list of dictionaries")
+
+        if not hasattr(self, 'update_count'):
+            self.update_count = 0
+        self.update_count += 1
+        
+        self.K = max(self.min_K, 
+                    self.initial_K * (self.decay_rate ** (self.update_count / self.decay_steps)))
+
+        model_deltas = {model: [] for model in self.model_ratings}
+        old_scores = {model: self.model_ratings[model]['score'] for model in self.model_ratings}
+        old_deviations = {model: self.model_ratings[model]['deviation'] for model in self.model_ratings}
+
+        for pair in pairs:
+            if not isinstance(pair, dict) or 'models' not in pair:
+                continue
+
+            model_a, model_b = pair['models']
+
+            numerator = 0
+            denominator = 0
+            
+            for judge_name, judge_info in pair['judges'].items():
+                if judge_name in [model_a, model_b]: 
+                    continue
+                    
+                judge_rating = self.model_ratings[judge_name]['score']
+                score_a, score_b = judge_info['ave_scores']
+                
+                numerator += judge_rating * (score_a - score_b)
+                denominator += judge_rating
+
+            if denominator == 0:
+                continue
+
+            score_diff = numerator / denominator
+
+            for i, model_i in enumerate([model_a, model_b]):
+                R_i = self.model_ratings[model_i]['score']
+                R_next = self.model_ratings[model_b if i == 0 else model_a]['score']
+                sigma_i = self.model_ratings[model_i]['deviation']
+                sigma_next = self.model_ratings[model_b if i == 0 else model_a]['deviation']
+
+                combined_deviation = math.sqrt(sigma_i**2 + sigma_next**2)
+
+                phi_forward = 0.5 * (1 + math.erf((R_i - R_next) / (math.sqrt(2) * combined_deviation)))
+                phi_backward = 0.5 * (1 + math.erf((R_next - R_i) / (math.sqrt(2) * combined_deviation)))
+
+                delta = (self.K 
+                        * (score_diff if i == 0 else -score_diff)
+                        * math.tanh(sigma_i)
+                        * max(abs(phi_forward - phi_backward), self.epsilon))
+
+                delta = delta / self.scaling_factor  # Use scaling_factor parameter
+
+                old_score = self.model_ratings[model_i]['score']
+                new_score = max(10, old_score + delta)
+                actual_delta = new_score - old_score
+                
+                model_deltas[model_i].append(actual_delta)
+                self.model_ratings[model_i]['score'] = new_score
+
+        for model in model_deltas:
+            if model_deltas[model]:
+
+                self.delta_history[model].extend(model_deltas[model])
+                self.delta_history[model] = self.delta_history[model][-self.window_size:]
+
+                if len(self.delta_history[model]) >= 2:  
+                    new_deviation = np.std(self.delta_history[model])
+                    self.model_ratings[model]['deviation'] = max(new_deviation, self.min_deviation)
+
+        print(f"\nUpdate count: {self.update_count}")
+        print(f"Current K value: {self.K:.2f}")
+        print("\nDeviation changes:")
+        for model in self.model_ratings:
+            if model in old_deviations:
+                print(f"{model}: {old_deviations[model]:.4f} -> {self.model_ratings[model]['deviation']:.4f}")
+
+    def compute_expected_score(self, model_a: str, model_b: str) -> float:
+        """
+        Compute expected score using the Phi function
+        """
+        R_a = self.model_ratings[model_a]['score']
+        R_b = self.model_ratings[model_b]['score']
+        sigma_a = self.model_ratings[model_a]['deviation']
+        sigma_b = self.model_ratings[model_b]['deviation']
+        
+        combined_deviation = math.sqrt(sigma_a**2 + sigma_b**2)
+        return 0.5 * (1 + math.erf((R_a - R_b) / (math.sqrt(2) * combined_deviation)))
+
+    def get_model_rating(self, model_name: str) -> Dict:
+        """Get current rating and deviation for a model"""
+        return self.model_ratings.get(model_name, None)
+
+    def get_all_ratings(self) -> Dict[str, Dict]:
+        """Get current ratings for all models"""
+        return self.model_ratings
+
+    def _update_deviation(self, model: str, rating_change: float) -> None:
+        """
+        Update the deviation (uncertainty) of a model's rating based on rating changes
+        
+        Args:
+            model (str): The model name
+            rating_change (float): The change in rating from the last update
+        """
+        if model not in self.delta_history:
+            self.delta_history[model] = []
+            
+        self.delta_history[model].append(abs(rating_change))
+
+        self.delta_history[model] = self.delta_history[model][-self.window_size:]
+
+        if len(self.delta_history[model]) >= 2:
+            new_deviation = np.std(self.delta_history[model])
+            min_deviation = 0.1  
+            self.model_ratings[model]['deviation'] = max(new_deviation, min_deviation)
+
+    def _record_delta(self, model: str, delta: float) -> None:
+        """
+        Record a rating change for a model
+        
+        Args:
+            model (str): The model name
+            delta (float): The rating change to record
+        """
+        if model not in self.delta_history:
+            self.delta_history[model] = []
+        
+        self.delta_history[model].append(delta)
+        self.delta_history[model] = self.delta_history[model][-self.window_size:]
+
+class RatingSystemDynamicWeighted(RatingSystem):
+    def __init__(self, model_scores: Dict[str, Dict[str, float]], 
+                 initial_K: float, 
+                 min_K: float,
+                 delta_history: Dict[str, List[float]] = None,
+                 base_dir: str = None,
+                 current_iteration: int = None,
+                 window_size: int = 10,
+                 min_deviation: float = 0.1,
+                 epsilon: float = 0.01,
+                 decay_rate: float = 0.9,
+                 decay_steps: int = 10,
+                 scaling_factor: float = 10.0,
+                 freeze_ratings: bool = False):  # Note: different default scaling
+        """
+        Initialize the weighted rating system with all configurable parameters
+        """
+        super().__init__(
+            model_scores=model_scores,
+            initial_K=initial_K,
+            min_K=min_K,
+            delta_history=delta_history,
+            window_size=window_size,
+            min_deviation=min_deviation,
+            epsilon=epsilon,
+            decay_rate=decay_rate,
+            decay_steps=decay_steps,
+            scaling_factor=scaling_factor,
+            freeze_ratings=freeze_ratings
+        )
+        self.base_dir = base_dir
+        self.current_iteration = current_iteration
+        self.weights = self._calculate_weights()
+
+    def _calculate_weights(self) -> dict:
+        """
+        Calculate the weights for each model based on previous iteration scores
+        
+        Returns:
+            dict: model name to weight mapping
+        """
+        # the default weight is 1.0
+        weights = {model: 1.0 for model in self.model_ratings.keys()}
+        
+        if not self.base_dir or self.current_iteration is None:
+            return weights
+            
+        try:
+            # if the current iteration is 8 or later, load the weights of the 7th iteration and fix it
+            if self.current_iteration >= 8:
+                weights_path = os.path.join(self.base_dir, "iteration_7", "weights.json")
+                if os.path.exists(weights_path):
+                    with open(weights_path, 'r') as f:
+                        return json.load(f)
+                return weights
+            
+            # the dynamic weight calculation logic for the 7th iteration and before
+            if self.current_iteration >= 2:
+                prev_iter = self.current_iteration - 1
+                prev_model_info_path = os.path.join(
+                    self.base_dir, 
+                    f"iteration_{prev_iter}", 
+                    "model_info.json"
+                )
+                
+                with open(prev_model_info_path, 'r') as f:
+                    prev_model_info = json.load(f)
+
+                sorted_models = sorted(
+                    prev_model_info.keys(),
+                    key=lambda x: prev_model_info[x]['score']
+                )
+                
+                num_weighted = self.current_iteration - 1
+                for i in range(min(num_weighted, len(sorted_models))):
+                    model = sorted_models[i]
+                    if i == 0:
+                        weights[model] = 0.0
+                    else:
+                        weights[model] = 0.1 * i
+                
+                # save weights at the 7th iteration
+                if self.current_iteration == 7:
+                    weights_path = os.path.join(self.base_dir, "iteration_7", "weights.json")
+                    os.makedirs(os.path.dirname(weights_path), exist_ok=True)
+                    with open(weights_path, 'w') as f:
+                        json.dump(weights, f, indent=2)
+                        
+            return weights
+            
+        except Exception as e:
+            print(f"Error calculating weights: {e}")
+            return weights
+
+    def update_ratings_from_judges(self, pairs: List[Dict]) -> None:
+        """
+        Update ratings based on the exact formula:
+        R_i' = R_i 
+               + K * ( sum_{j not in {a,b}} [ R_j * (s_{j,i} - s_{j,i+1}) ] / sum_{j not in {a,b}} R_j )
+               * tanh(σ_i)
+               * max(|Φ((R_i - R_{i+1})/sqrt(σ_i²+σ_{i+1}²)) - Φ((R_{i+1} - R_i)/sqrt(σ_i²+σ_{i+1}²))|, ε)
+        """
+        if self.freeze_ratings:
+            return
+
+        if isinstance(pairs, dict):
+            pairs = [pairs]
+        elif not isinstance(pairs, list):
+            raise ValueError("Input must be a dictionary or list of dictionaries")
+
+        # Initialize update counter and adjust K
+        if not hasattr(self, 'update_count'):
+            self.update_count = 0
+        self.update_count += 1
+        
+        decay_rate = 0.9
+        self.K = max(self.min_K, self.initial_K * (decay_rate ** (self.update_count / 10)))
+
+        # Track rating changes
+        model_deltas = {model: [] for model in self.model_ratings}
+        old_scores = {model: self.model_ratings[model]['score'] for model in self.model_ratings}
+        old_deviations = {model: self.model_ratings[model]['deviation'] for model in self.model_ratings}
+
+        for pair in pairs:
+            if not isinstance(pair, dict) or 'models' not in pair:
+                continue
+
+            model_a, model_b = pair['models']
+            
+            # Calculate weighted score difference exactly as per formula
+            numerator = 0
+            denominator = 0
+            
+            for judge_name, judge_info in pair['judges'].items():
+                if judge_name in [model_a, model_b]:  # Skip if judge is one of the models
+                    continue
+                    
+                judge_rating = self.model_ratings[judge_name]['score']
+                score_a, score_b = judge_info['ave_scores']
+                
+                # Apply weights to the scores
+                score_a *= self.weights[model_a]
+                score_b *= self.weights[model_b]
+                
+                numerator += judge_rating * (score_a - score_b)
+                denominator += judge_rating
+
+            if denominator == 0:
+                continue
+
+            # Normalized score difference term
+            score_diff = numerator / denominator
+
+            # Update both models
+            for i, model_i in enumerate([model_a, model_b]):
+                R_i = self.model_ratings[model_i]['score']
+                R_next = self.model_ratings[model_b if i == 0 else model_a]['score']
+                sigma_i = self.model_ratings[model_i]['deviation']
+                sigma_next = self.model_ratings[model_b if i == 0 else model_a]['deviation']
+
+                # Calculate combined deviation term
+                combined_deviation = math.sqrt(sigma_i**2 + sigma_next**2)
+
+                # Calculate Phi terms exactly as in formula
+                phi_forward = 0.5 * (1 + math.erf((R_i - R_next) / (math.sqrt(2) * combined_deviation)))
+                phi_backward = 0.5 * (1 + math.erf((R_next - R_i) / (math.sqrt(2) * combined_deviation)))
+                
+                # Calculate delta exactly matching the formula
+                delta = (self.K 
+                        * (score_diff if i == 0 else -score_diff)  # Score difference term
+                        * math.tanh(sigma_i)  # tanh(σ_i) term
+                        * max(abs(phi_forward - phi_backward), self.epsilon))  # Phi difference term
+
+                delta = delta / 10.0 ### scaling trial
+
+                # Update score and track changes
+                old_score = self.model_ratings[model_i]['score']
+                new_score = max(10, old_score + delta)
+                actual_delta = new_score - old_score
+                
+                model_deltas[model_i].append(actual_delta)
+                self.model_ratings[model_i]['score'] = new_score
+
+        # Update deviations based on recent deltas
+        for model in model_deltas:
+            if model_deltas[model]:
+
+                self.delta_history[model].extend(model_deltas[model])
+                self.delta_history[model] = self.delta_history[model][-self.window_size:]
+
+                if len(self.delta_history[model]) >= 2:  
+                    new_deviation = np.std(self.delta_history[model])
+                    min_deviation = 0.1  
+                    
+                    self.model_ratings[model]['deviation'] = max(new_deviation, min_deviation)
+
+        # Print updates
+        print(f"\nUpdate count: {self.update_count}")
+        print(f"Current K value: {self.K:.2f}")
+        print("\nDeviation changes:")
+        for model in self.model_ratings:
+            if model in old_deviations:
+                print(f"{model}: {old_deviations[model]:.4f} -> {self.model_ratings[model]['deviation']:.4f}")
+
+    def get_weights(self) -> Dict[str, float]:
+        """
+        Get current weights for all models
+        
+        Returns:
+            Dict[str, float]: model name to weight mapping
+        """
+        return self.weights
+    
+class RatingSystemStaticWeighted(RatingSystem):
+    def __init__(self, model_scores: Dict[str, Dict[str, float]], 
+                 initial_K: float, 
+                 min_K: float,
+                 delta_history: Dict[str, List[float]] = None,
+                 base_dir: str = None,
+                 current_iteration: int = None,
+                 window_size: int = 10,
+                 min_deviation: float = 0.1,
+                 epsilon: float = 0.01,
+                 decay_rate: float = 0.9,
+                 decay_steps: int = 10,
+                 scaling_factor: float = 20.0,
+                 freeze_ratings: bool = False):
+        """
+        Initialize the static weighted rating system with all configurable parameters
+        """
+        super().__init__(
+            model_scores=model_scores,
+            initial_K=initial_K,
+            min_K=min_K,
+            delta_history=delta_history,
+            window_size=window_size,
+            min_deviation=min_deviation,
+            epsilon=epsilon,
+            decay_rate=decay_rate,
+            decay_steps=decay_steps,
+            scaling_factor=scaling_factor,
+            freeze_ratings=freeze_ratings
+        )
+        self.base_dir = base_dir
+        self.current_iteration = current_iteration
+        self.weights = self._calculate_static_weights()
+        
+    def _calculate_static_weights(self) -> dict:
+        """
+        Calculate static weights based on iteration order.
+        Track the complete history of weighted models across all iterations.
+        
+        Returns:
+            dict: model name to weight mapping
+        """
+        weights = {model: 1.0 for model in self.model_ratings.keys()}
+        
+        if not self.base_dir or self.current_iteration is None:
+            return weights
+            
+        try:
+            # if the current iteration is 8 or later, load the weights of the 7th iteration and fix it
+            if self.current_iteration >= 8:
+                weights_path = os.path.join(self.base_dir, "iteration_7", "weights.json")
+                if os.path.exists(weights_path):
+                    with open(weights_path, 'r') as f:
+                        return json.load(f)
+                return weights
+            
+            # the static weight calculation logic for the 7th iteration and before
+            weighted_models = []
+            
+            for iter_num in range(2, self.current_iteration + 1):
+                prev_iter = iter_num - 1
+                prev_model_info_path = os.path.join(
+                    self.base_dir, 
+                    f"iteration_{prev_iter}", 
+                    "model_info.json"
+                )
+                
+                try:
+                    with open(prev_model_info_path, 'r') as f:
+                        prev_model_info = json.load(f)
+                    
+                    remaining_models = [
+                        model for model in prev_model_info.keys()
+                        if model not in weighted_models
+                    ]
+                    
+                    if remaining_models:
+                        sorted_models = sorted(
+                            remaining_models,
+                            key=lambda x: prev_model_info[x]['score']
+                        )
+                        
+                        model = sorted_models[0]
+                        weighted_models.append(model)
+                        
+                        weight_index = len(weighted_models) - 1
+                        if weight_index == 0:
+                            weights[model] = 0.0
+                        else:
+                            weights[model] = 0.1 * weight_index
+                    
+                except Exception as e:
+                    print(f"Error reading iteration {prev_iter}: {e}")
+                    continue
+            
+            # save weights at the 7th iteration
+            if self.current_iteration == 7:
+                weights_path = os.path.join(self.base_dir, "iteration_7", "weights.json")
+                os.makedirs(os.path.dirname(weights_path), exist_ok=True)
+                with open(weights_path, 'w') as f:
+                    json.dump(weights, f, indent=2)
+                    
+            return weights
+            
+        except Exception as e:
+            print(f"Error calculating static weights: {e}")
+            return weights
+            
+    def update_ratings_from_judges(self, pairs: List[Dict]) -> None:
+        """
+        Update ratings based on the exact formula:
+        R_i' = R_i 
+               + K * ( sum_{j not in {a,b}} [ R_j * (s_{j,i} - s_{j,i+1}) ] / sum_{j not in {a,b}} R_j )
+               * tanh(σ_i)
+               * max(|Φ((R_i - R_{i+1})/sqrt(σ_i²+σ_{i+1}²)) - Φ((R_{i+1} - R_i)/sqrt(σ_i²+σ_{i+1}²))|, ε)
+        """
+        if self.freeze_ratings:
+            return
+
+        if isinstance(pairs, dict):
+            pairs = [pairs]
+        elif not isinstance(pairs, list):
+            raise ValueError("Input must be a dictionary or list of dictionaries")
+
+        # Initialize update counter and adjust K
+        if not hasattr(self, 'update_count'):
+            self.update_count = 0
+        self.update_count += 1
+        
+        decay_rate = 0.9
+        self.K = max(self.min_K, self.initial_K * (decay_rate ** (self.update_count / 10)))
+
+        # Track rating changes
+        model_deltas = {model: [] for model in self.model_ratings}
+        old_scores = {model: self.model_ratings[model]['score'] for model in self.model_ratings}
+        old_deviations = {model: self.model_ratings[model]['deviation'] for model in self.model_ratings}
+
+        for pair in pairs:
+            if not isinstance(pair, dict) or 'models' not in pair:
+                continue
+
+            model_a, model_b = pair['models']
+            
+            # Calculate weighted score difference exactly as per formula
+            numerator = 0
+            denominator = 0
+            
+            for judge_name, judge_info in pair['judges'].items():
+                if judge_name in [model_a, model_b]:  # Skip if judge is one of the models
+                    continue
+                    
+                judge_rating = self.model_ratings[judge_name]['score']
+                score_a, score_b = judge_info['ave_scores']
+                
+                # Apply weights to the scores
+                score_a *= self.weights[model_a]
+                score_b *= self.weights[model_b]
+                
+                numerator += judge_rating * (score_a - score_b)
+                denominator += judge_rating
+
+            if denominator == 0:
+                continue
+
+            # Normalized score difference term
+            score_diff = numerator / denominator
+
+            # Update both models
+            for i, model_i in enumerate([model_a, model_b]):
+                R_i = self.model_ratings[model_i]['score']
+                R_next = self.model_ratings[model_b if i == 0 else model_a]['score']
+                sigma_i = self.model_ratings[model_i]['deviation']
+                sigma_next = self.model_ratings[model_b if i == 0 else model_a]['deviation']
+
+                # Calculate combined deviation term
+                combined_deviation = math.sqrt(sigma_i**2 + sigma_next**2)
+
+                # Calculate Phi terms exactly as in formula
+                phi_forward = 0.5 * (1 + math.erf((R_i - R_next) / (math.sqrt(2) * combined_deviation)))
+                phi_backward = 0.5 * (1 + math.erf((R_next - R_i) / (math.sqrt(2) * combined_deviation)))
+                
+                # Calculate delta exactly matching the formula
+                delta = (self.K 
+                        * (score_diff if i == 0 else -score_diff)  # Score difference term
+                        * math.tanh(sigma_i)  # tanh(σ_i) term
+                        * max(abs(phi_forward - phi_backward), self.epsilon))  # Phi difference term
+
+                delta = delta / 20.0 ### scaling trial
+
+                # Update score and track changes
+                old_score = self.model_ratings[model_i]['score']
+                new_score = max(10, old_score + delta)
+                actual_delta = new_score - old_score
+                
+                model_deltas[model_i].append(actual_delta)
+                self.model_ratings[model_i]['score'] = new_score
+
+        # Update deviations based on recent deltas
+        for model in model_deltas:
+            if model_deltas[model]:
+
+                self.delta_history[model].extend(model_deltas[model])
+                self.delta_history[model] = self.delta_history[model][-self.window_size:]
+
+                if len(self.delta_history[model]) >= 2:  
+                    new_deviation = np.std(self.delta_history[model])
+                    min_deviation = 0.1  
+                    
+                    self.model_ratings[model]['deviation'] = max(new_deviation, min_deviation)
+
+        print(f"\nUpdate count: {self.update_count}")
+        print(f"Current K value: {self.K:.2f}")
+        print("\nDeviation changes:")
+        for model in self.model_ratings:
+            if model in old_deviations:
+                print(f"{model}: {old_deviations[model]:.4f} -> {self.model_ratings[model]['deviation']:.4f}")
+    def get_weights(self) -> Dict[str, float]:
+        """
+        Get current weights for all models
+        
+        Returns:
+            Dict[str, float]: model name to weight mapping
+        """
+        return self.weights
+    
+#######################Below is the test code#######################
+
+def test_generate_preferences(json_path: str) -> List[Dict]:
+    """
+    generate preferences from judged pairs
+    
+    Args:
+        json_path (str): the path of the judged pairs json file
+    
+    Returns:
+        List[Dict]: the list of generated preference pairs
+    """
+    try:
+
+        with open(json_path, 'r', encoding='utf-8') as f:
+            judged_pairs = json.load(f)
+
+        model_names = set()
+        for pair in judged_pairs:
+            model_names.update(pair['models'])
+            if 'judges' in pair:
+                model_names.update(pair['judges'].keys())
+                
+        model_info_path = ''
+        with open(model_info_path, 'r') as f:
+            model_info = json.load(f)
+        initial_scores = {
+            model: {
+                'score': model_info[model]['score'], 
+                'deviation': model_info[model]['deviation']
+            }
+            for model in model_names
+        }
+
+        rating_system = RatingSystemStaticWeighted(
+            model_scores=initial_scores,
+            initial_K=20,
+            min_K= 10
+        )
+        
+        preferences = []
+        for pair in judged_pairs:
+            preference = rating_system.select_preference_response(pair)
+            if preference is not None:
+                preferences.append(preference)
+
+        print(f"\nGenerated {len(preferences)} preferences from {len(judged_pairs)} pairs")
+
+        if preferences:
+            print("\nExample preference:")
+            example = preferences[0]
+            print(f"Instruction: {example['instruction']}")
+            print(f"Chosen model: {example['chosen_model']}")
+            print(f"Rejected model: {example['rejected_model']}")
+            print(f"Score difference: {example['score_diff']:.4f}")
+            print(f"Weighted scores: {example['weighted_scores']}")
+
+        output_path = json_path.replace('.json', '_preferences.json')
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(preferences, f, indent=2, ensure_ascii=False)
+        print(f"\nPreferences saved to: {output_path}")
+        
+        return preferences
+        
+    except Exception as e:
+        print(f"Error generating preferences: {e}")
+        return []
+
+def main():
+    test_generate_preferences('') ## add the path of the judged pairs json file
+
+if __name__ == "__main__":
+    main()
